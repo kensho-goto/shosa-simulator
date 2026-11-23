@@ -8,8 +8,7 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 
 export function createRenderer(canvas, quality = 'high') {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance', preserveDrawingBuffer: true });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, quality === 'high' ? 2 : 1));
-  renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.AgXToneMapping;
   renderer.toneMappingExposure = 1.25;
@@ -19,7 +18,8 @@ export function createRenderer(canvas, quality = 'high') {
   scene.background = new THREE.Color('#0d0b09');
   const camera = new THREE.PerspectiveCamera(40, window.innerWidth / window.innerHeight, 0.05, 60);
   camera.position.set(1.4, 1.4, 1.8);
-  const composer = new EffectComposer(renderer);
+  const rt = new THREE.WebGLRenderTarget(window.innerWidth, window.innerHeight, { type: THREE.HalfFloatType, samples: 4 });
+  const composer = new EffectComposer(renderer, rt);
   composer.addPass(new RenderPass(scene, camera));
   const ao = new GTAOPass(scene, camera, window.innerWidth, window.innerHeight);
   ao.updateGtaoMaterial({ radius: 0.35, distanceExponent: 1.5, thickness: 1.5, scale: 1.2, samples: 12 });
@@ -27,7 +27,13 @@ export function createRenderer(canvas, quality = 'high') {
   composer.addPass(ao);
   composer.addPass(new OutputPass());
   const R = { renderer, scene, camera, composer, ao, quality };
-  R.setQuality = q => { R.quality = q; ao.enabled = q === 'high'; renderer.setPixelRatio(Math.min(window.devicePixelRatio, q === 'high' ? 2 : 1)); R.resize(); };
+  R.setQuality = q => {
+    R.quality = q; ao.enabled = q === 'high';
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, q === 'high' ? 2 : 1.5));
+    // かるい画質：影を作る明かりを減らす（スマホ向け）
+    scene.traverse(o => { if (o.isPointLight && o.userData.shadowHigh != null) o.castShadow = q === 'high' ? o.userData.shadowHigh : o.userData.shadowLow; });
+    R.resize();
+  };
   R.resize = () => {
     const w = window.innerWidth, h = window.innerHeight;
     renderer.setSize(w, h); composer.setSize(w, h); camera.aspect = w / h; camera.updateProjectionMatrix();

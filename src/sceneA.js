@@ -486,7 +486,7 @@ export const STEPS = {
       father.lookAt(player); mother.lookAt(player);
       await ctx.talk('mother', 'どうぞ、お茶をめしあがって。', 2.0);
       await ctx.talk('father', '冷めないうちに、どうぞ。', 1.8);
-      ctx.objective('お茶を<em>ひと口</em>いただき、茶托に戻す<br><small>マウスを上へ動かすと口元へ・ホイールで傾ける</small>');
+      ctx.objective('お茶を<em>ひと口</em>いただき、茶托に戻す<br><small>' + (document.body.classList.contains('touch') ? '湯のみを指で押さえて上へ動かすと口元へ・「傾ける」で飲む' : 'マウスを上へ動かすと口元へ・ホイールで傾ける') + '</small>');
       const S = { drank: 0, spilled: 0, placed: true, hot: false, choke: false, q: 0, qT: 0, qAns: 0, qState: 'none', mouthT: 0, t: 0, stain: null, dropped: false, ansWhile: '' };
       const mouth = () => player.headPos().addScaledVector(player.forward(), 0.085).add(new THREE.Vector3(0, -0.075, 0));
       const qList = [{ text: '「〇〇という会社で、営業をしています」' }, { text: '（いったん湯のみを置いてから答える）' }];
@@ -494,7 +494,7 @@ export const STEPS = {
       const spillAt = (amt) => {
         S.spilled += amt; ctx.sfx.play('spill', Math.min(1, amt * 6));
         const onTable = Math.abs(cup.pos.x) < 0.75 && cup.pos.z > 3.31 && cup.pos.z < 4.21;
-        if (!S.stain) S.stain = ctx.addStain(cup.pos.x, onTable ? TABLE_Y + 0.002 : 0.003, Math.max(cup.pos.z, onTable ? 3.32 : 2.95));
+        if (!S.stain) S.stain = ctx.addStain(cup.pos.x, onTable ? TABLE_Y + 0.002 : 0.003, Math.max(cup.pos.z, onTable ? 3.32 : 3.2));
         S.stain.scale.setScalar(Math.min(0.16, 0.02 + S.spilled * 0.5));
       };
       const r = await hand(ctx, {
@@ -752,6 +752,8 @@ async function wipe(ctx, S) {
   const st0 = S.stain.position.clone();
   cloth.obj.visible = true; cloth.free = false; cloth.done = false;
   cloth.pos.set(st0.x - 0.12, st0.y + 0.01, st0.z - 0.1);
+  // しみが体に隠れないよう、横から見る
+  ctx.shot([st0.x - 0.6, st0.y + 0.62, st0.z - 0.22], [st0.x + 0.05, st0.y, st0.z + 0.04], { fov: 46, speed: 3 });
   ctx.objective('ハンカチで、こぼれたお茶を<em>拭く</em><br><small>持ったまま、しみの上で動かす</small>');
   let q = 'none', qT = 0, ans = 0, last = null, tt = 0;
   const qList = [{ text: '「来年の秋ごろを考えています」' }, { text: '「これから、二人で相談して決めます」' }];
@@ -782,4 +784,5 @@ async function wipe(ctx, S) {
   ctx.hud.choices(null);
   ctx.removeStain(S.stain); S.stain = null;
   cloth.obj.visible = false;
+  ctx.shot([-1.05, 1.35, 2.15], [-0.15, 0.62, 3.9], { fov: 44, speed: 2.5 });
 }
