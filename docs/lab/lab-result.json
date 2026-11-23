@@ -1,5 +1,5 @@
 {
-  "date": "2026-11-23T15:24:48.448Z",
+  "date": "2026-11-23T15:53:29.385Z",
   "env": {
     "machine": "Apple M4 ・ メモリ 16GB ・ macOS 27.2.0",
     "browser": "Chrome（Playwright・ANGLE Metal）",
@@ -9,7 +9,7 @@
     {
       "name": "歩く途中で止まる",
       "ok": true,
-      "detail": "止まった位置 x=0.06"
+      "detail": "止まった位置 x=0.05"
     },
     {
       "name": "歩く途中のお辞儀は、止まってから行う",
@@ -39,7 +39,7 @@
     {
       "name": "持っている間、手と箱が離れない・めり込まない（3.5cm 以内）",
       "ok": true,
-      "detail": "最大 0.5cm・平均 0.0cm（574 コマ）"
+      "detail": "最大 0.5cm・平均 0.0cm（623 コマ）"
     },
     {
       "name": "受け渡しで持ち主が1回だけ移る（本人→相手役）",
@@ -64,12 +64,12 @@
     {
       "name": "不器用：箱が傾き、止まって持ち直してから着く",
       "ok": true,
-      "detail": "最大の傾き 35°"
+      "detail": "最大の傾き 39°"
     },
     {
       "name": "持ち直しの間も手と箱が離れない（3.5cm 以内）",
       "ok": true,
-      "detail": "最大 1.5cm"
+      "detail": "最大 1.0cm"
     },
     {
       "name": "ページのエラーなし",
@@ -83,8 +83,8 @@
       "light": "studio",
       "quality": "high",
       "resolution": "1280×720",
-      "avg": 59.1,
-      "min": 57.1,
+      "avg": 60,
+      "min": 60,
       "samples": 8
     },
     {
@@ -92,8 +92,8 @@
       "light": "washitsu",
       "quality": "high",
       "resolution": "1280×720",
-      "avg": 57.9,
-      "min": 55,
+      "avg": 60,
+      "min": 60,
       "samples": 8
     },
     {

@@ -121,6 +121,7 @@ function camGoal() {
   if (camMode === 'face') { pos = H.clone().addScaledVector(f, 0.95).add(tmp.set(0, 0.02, 0)); look = H.clone().add(tmp.set(0, 0.02, 0)); fov = 26; }
   else if (camMode === 'profile') { pos = H.clone().addScaledVector(s, 0.95); look = H.clone().add(tmp.set(0, 0.02, 0)); fov = 26; }
   else if (camMode === 'talk') { pos = H.clone().addScaledVector(f, 1.25).addScaledVector(s, -0.3).add(tmp.set(0, -0.06, 0)); look = H.clone().add(tmp.set(0, -0.12, 0)); fov = 36; }
+  else if (camMode === 'hands') { const m = a.handPos('L').add(a.handPos('R')).multiplyScalar(0.5); pos = m.clone().addScaledVector(f, 0.55).addScaledVector(s, -0.25).add(tmp.set(0, 0.18, 0)); look = m.clone().addScaledVector(f, 0.06); fov = 30; }
   else if (camMode === 'full') { const c = a.pos.clone(); pos = new THREE.Vector3(c.x * 0.6 + 0.35, 1.25, LAB.z1 + 1.9); look = new THREE.Vector3(c.x * 0.8, 0.85, c.z); fov = 38; }
   else { const m = a.pos.clone().lerp(people.partner.pos, 0.5); pos = new THREE.Vector3(m.x * 0.5, 1.6, LAB.z1 + 2.4); look = new THREE.Vector3(m.x * 0.85, 0.85, m.z); fov = 44; }
   // 壁の外へ出ない（手前＝南は開いている）
@@ -172,12 +173,12 @@ function setupUI() {
   document.querySelectorAll('[data-q]').forEach(b => b.addEventListener('click', () => { R.setQuality(b.dataset.q); markQuality(); }));
   $('#toggle').addEventListener('click', () => { $('#panel').classList.toggle('hide'); fitView(); });
   const keys = { i: ['idle'], s: ['stop'], o: ['bow'], g: ['pick'], h: ['placeB'], t: ['give'], r: ['reset'], q: ['look', 'camera'], e: ['look', 'other'], b: ['look', 'box'], x: ['look', 'none'], w: ['walk', 'center'] };
-  const cams = ['face', 'profile', 'talk', 'full', 'room'];
+  const cams = ['face', 'profile', 'talk', 'full', 'room', 'hands'];
   addEventListener('keydown', e => {
     if (e.target.tagName === 'SELECT') return;
     const k = e.key.toLowerCase();
     if (keys[k]) run(...keys[k]);
-    else if (k >= '1' && k <= '5') setCam(cams[+k - 1]);
+    else if (k >= '1' && k <= '6') setCam(cams[+k - 1]);
     else if (k === 'p') { $('#panel').classList.toggle('hide'); fitView(); }
   });
   // 床を押す → そこへ歩く
