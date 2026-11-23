@@ -6,6 +6,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#0b0907">
+<meta name="robots" content="noindex">
 <title>所作シミュレーター（仮題）</title>
 <link rel="icon" href="data:,">
 <link rel="stylesheet" href="src/style.css">
@@ -40,6 +41,15 @@
   <div id="tbtns"></div>
 </div>
 
+<!-- 合言葉 -->
+<div id="gate" hidden><div>
+  <h1>所作<br>シミュレーター</h1>
+  <p>合言葉を入れてください</p>
+  <input id="gateInput" type="text" inputmode="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="合言葉">
+  <p id="gateMsg">&nbsp;</p>
+  <button id="gateBtn">はいる</button>
+</div></div>
+
 <!-- スマホを縦にしているとき -->
 <div id="rotate"><div><b>⟲</b><p>スマホを横にして遊んでください</p></div></div>
 
@@ -56,7 +66,7 @@
     <button data-act="zukan">珍事ずかん</button>
     <button data-act="settings">設定</button>
   </nav>
-  <p class="foot">試作版 v0.1 ・ 人物は仮の素材です</p>
+  <p class="foot">試作版 v0.2 ・ 動きと音は仮の素材です</p>
 </section>
 
 <!-- 場面・チェックポイントえらび -->
@@ -109,5 +119,6 @@
 
 <div id="loading">読み込み中…</div>
 <script type="module" src="src/main.js"></script>
+<script src="src/gate.js"></script>
 </body>
 </html>
