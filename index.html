@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>所作シミュレーター（仮題）</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="src/style.css">
+<script type="importmap">
+{ "imports": {
+  "three": "./vendor/three-build/three.module.js",
+  "three/addons/": "./vendor/three-addons/"
+} }
+</script>
+</head>
+<body>
+<canvas id="view"></canvas>
+
+<!-- 遊んでいる間の表示 -->
+<div id="hud">
+  <div id="chapter"></div>
+  <div id="mood"><span class="lbl">空気</span><div class="bar"><i></i></div></div>
+  <div id="meter" hidden><div class="track"><b class="zone"></b><i class="needle"></i></div><span class="cap"></span></div>
+  <div id="objective"></div>
+  <div id="subtitle"></div>
+  <div id="choices"></div>
+  <div id="keys"></div>
+  <div id="toast"></div>
+</div>
+
+<!-- タイトル -->
+<section id="title" class="screen">
+  <div class="logo">
+    <small>仮題</small>
+    <h1>所作<br>シミュレーター</h1>
+    <p class="tag">礼儀正しくするほど、大事件になる。</p>
+  </div>
+  <nav>
+    <button data-act="story">はじめる<span>第一章　親への結婚挨拶</span></button>
+    <button data-act="select">場面をえらぶ</button>
+    <button data-act="zukan">珍事ずかん</button>
+    <button data-act="settings">設定</button>
+  </nav>
+  <p class="foot">試作版 v0.1 ・ 人物は仮の素材です</p>
+</section>
+
+<!-- 場面・チェックポイントえらび -->
+<section id="select" class="screen" hidden>
+  <h2>場面をえらぶ</h2>
+  <div id="selectList"></div>
+  <button class="back" data-act="back">もどる</button>
+</section>
+
+<!-- 珍事ずかん -->
+<section id="zukan" class="screen" hidden>
+  <h2>珍事ずかん</h2>
+  <div id="zukanList"></div>
+  <button class="back" data-act="back">もどる</button>
+</section>
+
+<!-- 設定 -->
+<section id="settings" class="screen" hidden>
+  <h2>設定</h2>
+  <label>字幕の大きさ <select data-set="subSize"><option value="s">小</option><option value="m">中</option><option value="l">大</option></select></label>
+  <label>マウスの感度 <input type="range" min="0.4" max="2" step="0.1" data-set="sens"></label>
+  <label>操作の手助け <select data-set="assist"><option value="0">なし</option><option value="1">あり（向きが合いやすい・こぼれにくい）</option></select></label>
+  <label>画質 <select data-set="quality"><option value="high">きれい</option><option value="low">かるい</option></select></label>
+  <label>音の大きさ <input type="range" min="0" max="1" step="0.05" data-set="vol"></label>
+  <button class="back" data-act="back">もどる</button>
+</section>
+
+<!-- 一時停止 -->
+<section id="pause" class="screen dim" hidden>
+  <h2>一時停止</h2>
+  <nav>
+    <button data-act="resume">つづける</button>
+    <button data-act="retryStep">このところからやり直す</button>
+    <button data-act="settings">設定</button>
+    <button data-act="quit">タイトルへ</button>
+  </nav>
+</section>
+
+<!-- 結果 -->
+<section id="result" class="screen dim" hidden>
+  <h2 id="resTitle"></h2>
+  <div id="resGrid"></div>
+  <div id="resFinds"></div>
+  <nav>
+    <button data-act="again">もう一度</button>
+    <button data-act="select">ところを選んでやり直す</button>
+    <button data-act="quit">タイトルへ</button>
+  </nav>
+</section>
+
+<div id="loading">読み込み中…</div>
+<script type="module" src="src/main.js"></script>
+</body>
+</html>
