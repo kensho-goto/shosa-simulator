@@ -2,7 +2,10 @@
 <html lang="ja">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#0b0907">
 <title>所作シミュレーター（仮題）</title>
 <link rel="icon" href="data:,">
 <link rel="stylesheet" href="src/style.css">
@@ -27,6 +30,18 @@
   <div id="keys"></div>
   <div id="toast"></div>
 </div>
+
+<!-- スマホの操作（その場面で使うものだけ出る） -->
+<div id="touch" class="off">
+  <button id="pauseBtn" aria-label="一時停止"><i></i><i></i></button>
+  <div id="thint"></div>
+  <div id="stick" hidden><i></i></div>
+  <div id="tsmall"></div>
+  <div id="tbtns"></div>
+</div>
+
+<!-- スマホを縦にしているとき -->
+<div id="rotate"><div><b>⟲</b><p>スマホを横にして遊んでください</p></div></div>
 
 <!-- タイトル -->
 <section id="title" class="screen">

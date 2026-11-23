@@ -6,6 +6,7 @@ import { loadModels, Actor } from './actor.js';
 import { Prop, floorHeight, makeShoe, makeGift, makeBag, makeCup, makeSaucer, makeCloth, makeStain } from './props.js';
 import { Input } from './input.js';
 import { Hud } from './hud.js';
+import { Touch, isTouch } from './touch.js';
 import { Sound } from './audio.js';
 import { Runner, Story, Abort, grade } from './story.js';
 import * as SAVE from './save.js';
@@ -13,10 +14,15 @@ import { SCENE, STEPS, FINDS } from './sceneA.js';
 
 const $ = id => document.getElementById(id);
 const data = SAVE.load();
+// スマホは、はじめは軽い画質にする（設定で変えられる）
+if (isTouch() && !data.settings.qualityChosen) data.settings.quality = 'low';
 const R = createRenderer($('view'), data.settings.quality);
 const rig = new CameraRig(R.camera);
 const input = new Input($('view'));
 const hud = new Hud();
+hud.input = input;
+const touch = new Touch(input, { onPause: () => { if (mode === 'play') togglePause(); } });
+hud.touch = touch;
 const sfx = new Sound();
 const runner = new Runner();
 const story = new Story(FINDS);
@@ -30,11 +36,12 @@ let hooks = [];
 async function boot() {
   await Promise.all([loadModels(), loadEnvironment(R)]);
   house = buildHouse(R.scene, R.renderer);
+  R.setQuality(data.settings.quality);
   actors = {
-    player: new Actor(R.scene, { model: 'Xbot', height: 1.72, name: 'player', look: { body: '#2c3652', joints: '#17181c', rough: 0.55 } }),
-    partner: new Actor(R.scene, { model: 'Xbot', height: 1.6, name: 'partner', slim: 0.88, look: { body: '#b9a089', joints: '#6b3a3a', rough: 0.6 } }),
-    father: new Actor(R.scene, { model: 'Xbot', height: 1.7, name: 'father', look: { body: '#5b5148', joints: '#26221e', rough: 0.7 } }),
-    mother: new Actor(R.scene, { model: 'Xbot', height: 1.56, name: 'mother', slim: 0.9, look: { body: '#7d8a7a', joints: '#3c3a36', rough: 0.7 } }),
+    player: new Actor(R.scene, { person: 'Business_Male_02', height: 1.72, name: 'player' }),
+    partner: new Actor(R.scene, { person: 'Female_Adult_11', height: 1.6, name: 'partner' }),
+    father: new Actor(R.scene, { person: 'Male_Adult_03', height: 1.7, name: 'father' }),
+    mother: new Actor(R.scene, { person: 'Business_Female_03', height: 1.56, name: 'mother' }),
   };
   const mk = (k, obj, opt = {}) => { R.scene.add(obj); props[k] = new Prop(obj, { name: k, floor: floorAt, ...opt }); return props[k]; };
   mk('shoeL', makeShoe('#3a2418', 1), { height: 0.09 }); mk('shoeR', makeShoe('#3a2418', -1), { height: 0.09 });
@@ -60,7 +67,7 @@ function loop(now) {
   if (!paused) {
     runner.tick(dt);
     for (const h of hooks.slice()) h.fn(dt);
-    if (actors) for (const a of Object.values(actors)) a.update(dt);
+    if (actors) { const tk = window.__shosa.ctx && window.__shosa.ctx.talking; for (const [k, a] of Object.entries(actors)) { a.s.talking = tk === k; a.update(dt); } }
     if (mode === 'title') titleCam(dt);
   }
   rig.update(paused ? 0 : dt);
@@ -217,7 +224,7 @@ function setupMenus() {
     const b = e.target.closest('[data-act]'); if (!b) return;
     sfx.ensure();
     const a = b.dataset.act;
-    if (a === 'story') playFrom(0);
+    if (a === 'story') { goFull(); playFrom(0); }
     if (a === 'select') { backTo = mode === 'result' ? 'result' : 'title'; renderSelect(); showScreen('select'); }
     if (a === 'zukan') { backTo = 'title'; renderZukan(); showScreen('zukan'); }
     if (a === 'settings') { backTo = paused ? 'pause' : 'title'; showScreen('settings'); }
@@ -229,8 +236,14 @@ function setupMenus() {
   });
   for (const el of document.querySelectorAll('[data-set]')) {
     const k = el.dataset.set; el.value = data.settings[k];
-    el.addEventListener('input', () => { data.settings[k] = el.type === 'range' ? +el.value : el.value; SAVE.save(data); applySettings(); });
+    el.addEventListener('input', () => { data.settings[k] = el.type === 'range' ? +el.value : el.value; if (k === 'quality') data.settings.qualityChosen = true; SAVE.save(data); applySettings(); });
   }
+}
+// スマホ：全画面と横向き（できる機種だけ）
+function goFull() {
+  if (!touch.on) return;
+  const el = document.documentElement;
+  try { const r = el.requestFullscreen && el.requestFullscreen({ navigationUI: 'hide' }); if (r && r.then) r.then(() => screen.orientation && screen.orientation.lock && screen.orientation.lock('landscape').catch(() => {})).catch(() => {}); } catch (_) { /* できない機種 */ }
 }
 function applySettings() {
   const s = data.settings;
@@ -250,5 +263,5 @@ function renderZukan() {
   $('zukanList').innerHTML = Object.entries(FINDS).map(([id, f]) => data.finds[id] ? `<div>${f.name}<small>${f.desc}</small></div>` : `<div class="lock">？？？<small>まだ見つけていない</small></div>`).join('');
 }
 
-window.__shosa = { project(x, y, z) { const v = new THREE.Vector3(x, y, z).project(R.camera); return { x: (v.x + 1) / 2 * innerWidth, y: (1 - v.y) / 2 * innerHeight }; }, story, get actors() { return actors; }, get props() { return props; }, rig, R, data, playFrom, retryStep, get mode() { return mode; }, get step() { return SCENE.steps[curIndex]?.id; }, STEPS, SCENE };
+window.__shosa = { project(x, y, z) { const v = new THREE.Vector3(x, y, z).project(R.camera); return { x: (v.x + 1) / 2 * innerWidth, y: (1 - v.y) / 2 * innerHeight }; }, story, get actors() { return actors; }, get props() { return props; }, get stains() { return stains; }, rig, R, data, playFrom, retryStep, get mode() { return mode; }, get step() { return SCENE.steps[curIndex]?.id; }, STEPS, SCENE };
 boot().catch(e => { console.error(e); $('loading').textContent = '読み込みに失敗しました。ページを読み込み直してください。'; });

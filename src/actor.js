@@ -1,14 +1,60 @@
-// 人物：仮のモデルに「歩く・立つ・正座・お辞儀・手を伸ばす・見る・うなずく」を重ねる。
+// 人物：写実の人物モデル（Microsoft Rocketbox、MIT）に
+// 「立つ・歩く・息・正座・お辞儀・手を伸ばす・見る・うなずく・まばたき・口の動き・表情」を、計算で重ねる。
 // 骨は世界座標の向きで合わせる（骨ごとの軸を決め打ちしない）。
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
 
+// 人物の一覧（assets/people/<名前>/）
+export const PEOPLE = {
+  Business_Male_02: { code: 'm008' },   // 主人公
+  Female_Adult_11: { code: 'f011' },    // 相手（美咲）
+  Male_Adult_03: { code: 'm004' },      // 父
+  Business_Female_03: { code: 'f016' }, // 母
+};
+const BONE = {
+  Root: 'Bip01', Hips: 'Bip01_Pelvis', Spine: 'Bip01_Spine', Spine1: 'Bip01_Spine1', Spine2: 'Bip01_Spine2', Neck: 'Bip01_Neck', Head: 'Bip01_Head',
+  LEye: 'Bip01_LEye', REye: 'Bip01_REye',
+};
+for (const [L, c] of [['Left', 'L'], ['Right', 'R']]) {
+  Object.assign(BONE, {
+    [L + 'UpLeg']: `Bip01_${c}_Thigh`, [L + 'Leg']: `Bip01_${c}_Calf`, [L + 'Foot']: `Bip01_${c}_Foot`, [L + 'ToeBase']: `Bip01_${c}_Toe0`,
+    [L + 'Shoulder']: `Bip01_${c}_Clavicle`, [L + 'Arm']: `Bip01_${c}_UpperArm`, [L + 'ForeArm']: `Bip01_${c}_Forearm`, [L + 'Hand']: `Bip01_${c}_Hand`,
+    [L + 'HandMiddle1']: `Bip01_${c}_Finger2`,
+  });
+}
+const FINGERS = ['Finger1', 'Finger2', 'Finger3', 'Finger4'];
+
 const loader = new GLTFLoader();
+const texLoader = new THREE.TextureLoader();
 const cache = {};
-export async function loadModels() {
-  const names = ['Xbot'];
-  await Promise.all(names.map(async n => { cache[n] = await loader.loadAsync(`assets/models/${n}.glb`); }));
+function tex(url, srgb) {
+  const t = texLoader.load(url);
+  t.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;
+  t.anisotropy = 4;
+  return t;
+}
+export async function loadModels(onProgress) {
+  let done = 0; const names = Object.keys(PEOPLE);
+  await Promise.all(names.map(async n => {
+    const { code } = PEOPLE[n]; const dir = `assets/people/${n}/`;
+    const gltf = await loader.loadAsync(dir + n + '.glb');
+    const mats = {
+      body: new THREE.MeshStandardMaterial({ name: 'body', map: tex(dir + code + '_body.jpg', true), normalMap: tex(dir + code + '_body_normal.jpg'), roughness: 0.82 }),
+      head: new THREE.MeshStandardMaterial({ name: 'head', map: tex(dir + code + '_head_color.jpg', true), normalMap: tex(dir + code + '_head_normal.jpg'), roughness: 0.58 }),
+      opacity: new THREE.MeshStandardMaterial({ name: 'opacity', map: tex(dir + code + '_opacity_color.png', true), roughness: 0.7, alphaTest: 0.12, alphaToCoverage: true, side: THREE.DoubleSide }),
+    };
+    mats.head.normalScale.set(0.7, 0.7);
+    gltf.scene.traverse(o => {
+      if (!o.isMesh) return;
+      const pickMat = m => /head/.test(m.name) ? mats.head : /opacity/.test(m.name) ? mats.opacity : mats.body;
+      o.material = Array.isArray(o.material) ? o.material.map(pickMat) : pickMat(o.material);
+    });
+    gltf.scene.updateMatrixWorld(true);
+    const box = new THREE.Box3().setFromObject(gltf.scene);
+    cache[n] = { gltf, tall: box.max.y - box.min.y };
+    done++; onProgress && onProgress(done / names.length);
+  }));
   return cache;
 }
 
@@ -23,7 +69,7 @@ function applyWorldRot(bone, q) {
   bone.quaternion.premultiply(local);
   bone.updateMatrixWorld(true);
 }
-export function rotWorld(bone, axis, angle) { applyWorldRot(bone, tmpQ.setFromAxisAngle(axis, angle).clone()); }
+export function rotWorld(bone, axis, angle) { if (angle) applyWorldRot(bone, tmpQ.setFromAxisAngle(axis, angle).clone()); }
 function aim(bone, child, dir) {
   const a = wpos(bone), b = wpos(child);
   const cur = b.sub(a).normalize();
@@ -31,59 +77,50 @@ function aim(bone, child, dir) {
   applyWorldRot(bone, q);
 }
 const ease = t => t * t * (3 - 2 * t);
+const clamp01 = v => THREE.MathUtils.clamp(v, 0, 1);
 
 export class Actor {
-  constructor(scene, { model = 'Xbot', height = 1.7, name = '', look = {}, slim = 1 } = {}) {
+  constructor(scene, { person = 'Business_Male_02', height = 1.7, name = '' } = {}) {
     this.name = name;
-    const src = cache[model];
+    const src = cache[person];
     this.root = new THREE.Group(); scene.add(this.root);
-    this.model = SkeletonUtils.clone(src.scene);
+    this.model = SkeletonUtils.clone(src.gltf.scene);
     this.root.add(this.model);
+    this.model.scale.setScalar(height / src.tall);
+    this.height = height;
+    this.faces = [];
     this.model.traverse(o => {
       if (o.isMesh) {
         o.castShadow = true; o.receiveShadow = true; o.frustumCulled = false;
-        o.material = o.material.clone();
-        const k = o.material.name || '';
-        if (look.body && /Beta_HighLimbs|Ch03|Body/i.test(k)) o.material.color.set(look.body);
-        if (look.joints && /Joints/i.test(k)) o.material.color.set(look.joints);
-        if (look.rough != null) o.material.roughness = look.rough;
-        if (o.material.metalness > 0.3) o.material.metalness = 0.1;
+        if (o.morphTargetDictionary && Object.keys(o.morphTargetDictionary).length) this.faces.push(o);
       }
     });
-    // 身長をそろえる
-    this.root.updateMatrixWorld(true);
-    // 骨の位置で身長を測る（頭のてっぺん − 足先）
-    let top = null, low = Infinity;
-    this.model.traverse(o => { if (o.isBone) { const y = o.getWorldPosition(V()).y; if (/HeadTop_End/.test(o.name)) top = y; if (/Toe|Foot/.test(o.name)) low = Math.min(low, y); } });
-    const h = (top - low) * 1.03;
-    this.model.scale.multiplyScalar(height / h);
-    this.model.scale.x *= slim; this.model.scale.z *= slim;
-    this.height = height;
     this.root.updateMatrixWorld(true);
     // 骨
+    const all = {}; this.model.traverse(o => { if (o.isBone || /^Bip01/.test(o.name)) all[o.name] = o; });
     const B = this.bones = {};
-    this.model.traverse(o => { if (o.isBone) B[o.name.replace(/^mixamorig:?/, '')] = o; });
-    // 動き（Xbot の待機・歩きをどちらのモデルにも使う）
-    this.mixer = new THREE.AnimationMixer(this.model);
-    const pick = n => {
-      const c = THREE.AnimationClip.findByName(cache.Xbot.animations, n).clone();
-      // 腰の位置の動きは使わない（その場で動かす）
-      c.tracks = c.tracks.filter(t => !/Hips\.position/.test(t.name));
-      return this.mixer.clipAction(c);
-    };
-    this.act = { idle: pick('idle'), walk: pick('walk') };
-    this.act.idle.play(); this.act.walk.play();
-    this.act.walk.setEffectiveWeight(0);
-    this.mixer.update(Math.random() * 3);
+    for (const [k, n] of Object.entries(BONE)) B[k] = all[n];
+    this.fingers = { L: [], R: [] };
+    // 指の骨の名前（Finger1, Finger11, Finger12）
+    for (const c of ['L', 'R']) this.fingers[c] = FINGERS.map(f => [all[`Bip01_${c}_${f}`], all[`Bip01_${c}_${f}1`], all[`Bip01_${c}_${f}2`]].filter(Boolean));
+    this.thumbs = { L: [all.Bip01_L_Finger0, all.Bip01_L_Finger01], R: [all.Bip01_R_Finger0, all.Bip01_R_Finger01] };
+    // 元の姿勢（毎フレームここから組み直す）
+    this.rest = [];
+    this.model.traverse(o => { if (o.isBone || o.name === 'Bip01') this.rest.push([o, o.quaternion.clone(), o.position.clone()]); });
+    // 頭の前の向き（目の向きに使う）
+    const hw = wpos(B.Head);
+    this.headFrontLocal = B.Head.worldToLocal(hw.clone().add(new THREE.Vector3(0, 0, 0.2)));
     // 状態
     this.s = {
       speed: 0, seated: 0, seatedTarget: 0, bow: 0, bowSeated: 0,
       reach: { L: null, R: null }, reachW: { L: 0, R: 0 },
       look: null, lookW: 0, gesture: null, gt: 0, lean: 0, wobble: 0, headDown: 0,
-      handsFront: 0,
+      handsFront: 0, talking: false, smile: 0, worry: 0,
     };
     this.t = Math.random() * 10;
-    this.hipsRest = this.bones.Hips.position.clone();
+    this.phase = 0; this.walkW = 0;
+    this.blinkT = 1 + Math.random() * 3; this.blink = 0;
+    this.face = { smile: 0, worry: 0, jaw: 0 };
   }
   get pos() { return this.root.position; }
   get yaw() { return this.root.rotation.y; }
@@ -100,25 +137,50 @@ export class Actor {
 
   update(dt) {
     this.t += dt;
-    const s = this.s, B = this.bones;
-    // 歩きと待機のまぜ方
-    const w = THREE.MathUtils.clamp(s.speed / 1.1, 0, 1);
-    this.act.walk.setEffectiveWeight(w); this.act.idle.setEffectiveWeight(1 - w);
-    this.act.walk.timeScale = Math.max(0.6, s.speed / 1.15);
-    this.mixer.update(dt);
-    // 腰の位置は元に戻す
-    B.Hips.position.copy(this.hipsRest);
+    const s = this.s;
+    for (const [b, q, p] of this.rest) { b.quaternion.copy(q); b.position.copy(p); }
+    this.model.position.set(0, 0, 0);
+    this.root.updateMatrixWorld(true);
     s.seated += (s.seatedTarget - s.seated) * Math.min(1, dt * 2.2);
     for (const k of ['L', 'R']) {
       const tw = (s.reachWTarget && s.reachWTarget[k]) || 0;
       s.reachW[k] += (tw - s.reachW[k]) * Math.min(1, dt * 6);
       if (s.reachW[k] < 0.01 && !tw) s.reach[k] = null;
     }
-    this.root.updateMatrixWorld(true);
-    this.applySeiza(ease(THREE.MathUtils.clamp(s.seated, 0, 1)));
-    this.applyBow();
-    this.applyArms();
+    const seat = ease(clamp01(s.seated));
+    const ww = clamp01(s.speed / 1.0) * (1 - seat);
+    this.walkW += (ww - this.walkW) * Math.min(1, dt * 8);
+    if (this.walkW > 0.01) this.phase += dt * Math.PI * 2 * (0.75 + Math.min(1.2, s.speed) * 0.75);
+    this.applyWalk(this.walkW);
+    this.applySeiza(seat);
+    // 脚の位置を覚えておく（上半身を動かしても脚は動かさない）
+    const B = this.bones;
+    const legs = ['Left', 'Right'].map(L => ({ L, knee: wpos(B[L + 'Leg']).clone(), foot: wpos(B[L + 'Foot']).clone(), toe: wpos(B[L + 'ToeBase']).clone() }));
+    this.applyTorso(seat);
+    for (const g of legs) {
+      aim(B[g.L + 'UpLeg'], B[g.L + 'Leg'], g.knee.clone().sub(wpos(B[g.L + 'UpLeg'])));
+      aim(B[g.L + 'Leg'], B[g.L + 'Foot'], g.foot.clone().sub(wpos(B[g.L + 'Leg'])));
+      aim(B[g.L + 'Foot'], B[g.L + 'ToeBase'], g.toe.clone().sub(wpos(B[g.L + 'Foot'])));
+    }
+    this.applyArms(seat);
     this.applyHead(dt);
+    this.applyFace(dt);
+  }
+
+  // 歩く：ももを振り、ひざを曲げ、腰を少し上下させる
+  applyWalk(w) {
+    if (w < 0.01) return;
+    const B = this.bones, ax = this.pitchAxis(), ph = this.phase;
+    for (const [L, sg] of [['Left', 1], ['Right', -1]]) {
+      const sw = Math.sin(ph) * sg;
+      const thigh = -sw * 0.42 * w;
+      const flex = Math.pow(clamp01(0.5 + 0.5 * Math.sin(ph * 1 + (sg > 0 ? 0 : Math.PI) + 2.0)), 2) * 0.95 * w;
+      rotWorld(B[L + 'UpLeg'], ax, thigh);
+      rotWorld(B[L + 'Leg'], ax, flex);
+      rotWorld(B[L + 'Foot'], ax, -(thigh + flex) * 0.6);
+    }
+    this.model.position.y = -(1 - Math.cos(ph * 2)) * 0.012 * w / this.model.scale.y;
+    rotWorld(B.Hips, UP, Math.sin(ph) * 0.06 * w);
   }
 
   // 正座（seated=1）。立った姿との間はまぜる。
@@ -126,15 +188,17 @@ export class Actor {
     if (k <= 0.001) return;
     const B = this.bones, f = this.forward(), side = this.side();
     const H = this.height / 1.7;
-    const names = ['Hips', 'LeftUpLeg', 'LeftLeg', 'LeftFoot', 'RightUpLeg', 'RightLeg', 'RightFoot'];
+    const names = ['Root', 'Hips', 'LeftUpLeg', 'LeftLeg', 'LeftFoot', 'RightUpLeg', 'RightLeg', 'RightFoot'];
     const before = names.map(n => B[n].quaternion.clone());
     const p = this.pos;
     // 腰を下げる
     const hipW = wpos(B.Hips);
-    const target = new THREE.Vector3(p.x, p.y + 0.36 * H, p.z).addScaledVector(f, -0.06 * H);
+    const target = new THREE.Vector3(p.x, p.y + 0.25 * H, p.z).addScaledVector(f, -0.07 * H);
     const want = hipW.clone().lerp(target, k);
-    B.Hips.parent.updateMatrixWorld(true);
-    B.Hips.position.copy(B.Hips.parent.worldToLocal(want.clone()));
+    const delta = want.sub(hipW);
+    const rootW = wpos(B.Root).add(delta);
+    B.Root.parent.updateMatrixWorld(true);
+    B.Root.position.copy(B.Root.parent.worldToLocal(rootW));
     this.root.updateMatrixWorld(true);
     for (const [L, sg] of [['Left', 1], ['Right', -1]]) {
       const up = B[L + 'UpLeg'], leg = B[L + 'Leg'], foot = B[L + 'Foot'], toe = B[L + 'ToeBase'];
@@ -145,80 +209,77 @@ export class Actor {
       aim(up, leg, dThigh);
       const dShin = f.clone().multiplyScalar(-1).addScaledVector(UP, -0.03).addScaledVector(side, sg * 0.02).normalize();
       aim(leg, foot, dShin);
-      if (toe) aim(foot, toe, f.clone().multiplyScalar(-0.35).addScaledVector(UP, -0.94).normalize());
+      aim(foot, toe, f.clone().multiplyScalar(-0.35).addScaledVector(UP, -0.94).normalize());
     }
-    if (k < 0.999) names.forEach((n, i) => { const full = B[n].quaternion.clone(); B[n].quaternion.copy(before[i]).slerp(full, k); });
+    if (k < 0.999) names.slice(1).forEach((n, i) => { const full = B[n].quaternion.clone(); B[n].quaternion.copy(before[i + 1]).slerp(full, k); });
     this.root.updateMatrixWorld(true);
   }
 
-  // お辞儀（s.bow は度）。座っていれば座礼、立っていれば立礼。
-  applyBow() {
-    const s = this.s, B = this.bones;
-    const deg = s.bow + s.headDown * 0.0;
-    const lean = s.lean;
-    if (Math.abs(deg) < 0.05 && Math.abs(lean) < 0.01 && s.wobble < 0.001) return;
-    const ax = this.pitchAxis();
+  // 上半身：息・お辞儀（s.bow は度）・前のめり・ふらつき
+  applyTorso(seat) {
+    const s = this.s, B = this.bones, ax = this.pitchAxis();
+    // 息と、ごく小さな重心のゆれ
+    rotWorld(B.Spine1, ax, Math.sin(this.t * 1.7) * 0.012);
+    rotWorld(B.Hips, this.forward(), Math.sin(this.t * 0.45) * 0.012 * (1 - seat));
+    const deg = s.bow;
+    if (Math.abs(deg) < 0.05 && Math.abs(s.lean) < 0.01 && s.wobble < 0.001) return;
     const rad = THREE.MathUtils.degToRad(deg);
-    const seat = ease(THREE.MathUtils.clamp(s.seated, 0, 1));
     const hipShare = 0.55 + 0.2 * seat;
     const wob = s.wobble ? Math.sin(this.t * 7.3) * s.wobble * 0.06 : 0;
-    // 腰から折る（脚は元の向きのまま）
-    const legs = ['Left', 'Right'].map(L => ({ L, knee: wpos(B[L + 'Leg']).clone(), foot: wpos(B[L + 'Foot']).clone(), toe: B[L + 'ToeBase'] ? wpos(B[L + 'ToeBase']).clone() : null }));
-    rotWorld(B.Hips, ax, rad * hipShare + lean + wob);
-    for (const g of legs) {
-      aim(B[g.L + 'UpLeg'], B[g.L + 'Leg'], g.knee.clone().sub(wpos(B[g.L + 'UpLeg'])));
-      aim(B[g.L + 'Leg'], B[g.L + 'Foot'], g.foot.clone().sub(wpos(B[g.L + 'Leg'])));
-      if (g.toe) aim(B[g.L + 'Foot'], B[g.L + 'ToeBase'], g.toe.clone().sub(wpos(B[g.L + 'Foot'])));
-    }
+    rotWorld(B.Hips, ax, rad * hipShare + s.lean + wob);
     const rest = rad * (1 - hipShare);
     rotWorld(B.Spine, ax, rest * 0.4); rotWorld(B.Spine1, ax, rest * 0.35); rotWorld(B.Spine2, ax, rest * 0.25);
     // 立って深く下げると腰を少し引く
     if (seat < 0.5 && deg > 5) {
       const back = this.forward().multiplyScalar(-Math.sin(rad * hipShare) * 0.12 * this.height / 1.7);
-      const hw = wpos(B.Hips).add(back);
-      B.Hips.position.copy(B.Hips.parent.worldToLocal(hw));
+      const rw = wpos(B.Root).add(back);
+      B.Root.position.copy(B.Root.parent.worldToLocal(rw));
       this.root.updateMatrixWorld(true);
     }
   }
 
   // 腕：手を目標へ（2本の骨の計算）。目標がなければ姿勢に合わせた置き場所。
-  applyArms() {
-    const s = this.s, B = this.bones, f = this.forward(), side = this.side(), p = this.pos;
-    const seat = ease(THREE.MathUtils.clamp(s.seated, 0, 1));
+  applyArms(seat) {
+    const s = this.s;
     const deg = s.bow;
     for (const [k, L, sg] of [['L', 'Left', 1], ['R', 'Right', -1]]) {
       let target = null, wgt = 0;
       if (s.reach[k] && s.reachW[k] > 0.01) { target = s.reach[k]; wgt = s.reachW[k]; }
-      const def = this.defaultHand(k, sg, seat, deg);
-      if (!def && !target) continue;
-      const tgt = target ? (def ? def.clone().lerp(target, wgt) : target) : def;
-      this.ik(L, sg, tgt);
+      const { pos: def, hang } = this.defaultHand(L, sg, seat, deg);
+      const tgt = target ? def.clone().lerp(target, wgt) : def;
+      this.ik(L, sg, tgt, target ? hang * (1 - wgt) : hang);
+      this.curl(k, target ? 0.25 : 0.35);
     }
   }
-  defaultHand(k, sg, seat, deg) {
+  hangHand(L, sg) {
+    const B = this.bones, f = this.forward(), side = this.side();
+    const S = wpos(B[L + 'Arm']);
+    const len = S.distanceTo(wpos(B[L + 'ForeArm'])) + wpos(B[L + 'ForeArm']).distanceTo(wpos(B[L + 'Hand']));
+    const sw = -Math.sin(this.phase) * sg * 0.14 * this.walkW;
+    return S.clone().addScaledVector(UP, -len * 0.95).addScaledVector(side, sg * 0.035).addScaledVector(f, 0.05 + sw);
+  }
+  defaultHand(L, sg, seat, deg) {
     const f = this.forward(), side = this.side(), p = this.pos, H = this.height / 1.7;
+    const hf = Math.max(this.s.handsFront, clamp01(deg / 20));
+    let stand = this.hangHand(L, sg), hang = 1;
+    if (hf > 0.001) {
+      // 体の前、ももの前
+      const rad = THREE.MathUtils.degToRad(deg) * 0.75;
+      const fr = p.clone().addScaledVector(side, sg * 0.07 * H).addScaledVector(f, (0.15 + Math.sin(rad) * 0.25) * H);
+      fr.y = p.y + (0.72 - (1 - Math.cos(rad)) * 0.35) * H;
+      stand = stand.lerp(fr, hf); hang = 1 - hf;
+    }
     if (seat > 0.05) {
       // ももの上 → お辞儀が深いと床へ
-      const thigh = p.clone().addScaledVector(f, 0.22 * H).addScaledVector(side, sg * 0.1 * H); thigh.y = p.y + 0.42 * H;
+      const thigh = p.clone().addScaledVector(f, 0.2 * H).addScaledVector(side, sg * 0.09 * H); thigh.y = p.y + 0.34 * H;
       const floor = p.clone().addScaledVector(f, (0.5 + 0.004 * deg) * H).addScaledVector(side, sg * 0.07 * H); floor.y = p.y + 0.02;
-      const b = THREE.MathUtils.clamp((deg - 8) / 22, 0, 1);
+      const b = clamp01((deg - 8) / 22);
       const seatHand = thigh.lerp(floor, ease(b));
-      const stand = this.standHand(sg, deg);
-      return stand.lerp(seatHand, seat);
+      stand = stand.lerp(seatHand, seat); hang *= 1 - seat;
     }
-    if (deg > 1 || this.s.handsFront > 0.01) return this.standHand(sg, deg);
-    return null;
+    return { pos: stand, hang };
   }
-  standHand(sg, deg) {
-    const f = this.forward(), side = this.side(), p = this.pos, H = this.height / 1.7;
-    const hf = Math.max(this.s.handsFront, THREE.MathUtils.clamp(deg / 20, 0, 1));
-    const rad = THREE.MathUtils.degToRad(deg) * 0.75;
-    // 体の前、ももの前
-    const h = p.clone().addScaledVector(side, sg * (0.16 - 0.08 * hf) * H).addScaledVector(f, (0.05 + 0.1 * hf + Math.sin(rad) * 0.25) * H);
-    h.y = p.y + (0.82 - 0.1 * hf - (1 - Math.cos(rad)) * 0.35) * H;
-    return h;
-  }
-  ik(L, sg, T) {
+  ik(L, sg, T, hang = 0) {
     const B = this.bones;
     const sh = B[L + 'Arm'], el = B[L + 'ForeArm'], ha = B[L + 'Hand'];
     const S = wpos(sh), E0 = wpos(el), H0 = wpos(ha);
@@ -232,26 +293,38 @@ export class Actor {
     const perp = pole.sub(dir.clone().multiplyScalar(pole.dot(dir))).normalize();
     const E = S.clone().addScaledVector(dir, a).addScaledVector(perp, h);
     aim(sh, el, E.clone().sub(S));
-    aim(el, ha, S.clone().addScaledVector(dir, d).sub(E));
-    // 手のひらを下・指を前へ
+    const fore = S.clone().addScaledVector(dir, d).sub(E);
+    aim(el, ha, fore);
+    // 手のひら：たらした手は腕の向きのまま、物を持つときは指を前へ
     const mid = B[L + 'HandMiddle1'];
-    if (mid) aim(ha, mid, dir.clone().multiplyScalar(0.6).addScaledVector(this.forward(), 0.4).addScaledVector(UP, -0.3));
+    if (mid) {
+      const reachDir = dir.clone().multiplyScalar(0.6).addScaledVector(this.forward(), 0.4).addScaledVector(UP, -0.3).normalize();
+      aim(ha, mid, fore.clone().normalize().lerp(reachDir, 1 - hang));
+    }
+  }
+  // 指を軽く曲げる
+  curl(k, amt) {
+    const fs = this.fingers[k]; if (!fs.length || !fs[0][0] || !fs[3] || !fs[3][0]) return;
+    const across = wpos(fs[0][0]).sub(wpos(fs[3][0])).normalize();
+    const axis = k === 'L' ? across : across.negate();
+    for (const f of fs) for (let i = 0; i < f.length; i++) rotWorld(f[i], axis, amt * (i === 0 ? 0.8 : 1.1));
   }
 
   applyHead(dt) {
     const s = this.s, B = this.bones;
-    // 視線
+    const hp = wpos(B.Head);
+    let tgt = null;
+    // 視線（首の骨は肩につながっているので、頭だけを回す）
     if (s.look && s.lookW > 0.01) {
-      const hp = wpos(B.Head);
-      const t = (s.look.isVector3 ? s.look : s.look.headPos ? s.look.headPos() : wpos(s.look));
-      const d = t.clone().sub(hp);
+      tgt = (s.look.isVector3 ? s.look : s.look.headPos ? s.look.headPos() : wpos(s.look));
+      const d = tgt.clone().sub(hp);
       const f = this.forward();
       const yaw = THREE.MathUtils.clamp(Math.atan2(d.x, d.z) - this.yaw, -1.2, 1.2);
       const wrapYaw = Math.atan2(Math.sin(yaw), Math.cos(yaw));
       const horiz = Math.hypot(d.x, d.z);
       const pitch = THREE.MathUtils.clamp(Math.atan2(d.y, horiz), -0.7, 0.5);
-      rotWorld(B.Neck, UP, wrapYaw * 0.4 * s.lookW);
-      rotWorld(B.Head, UP, wrapYaw * 0.6 * s.lookW);
+      rotWorld(B.Spine2, UP, wrapYaw * 0.15 * s.lookW);
+      rotWorld(B.Head, UP, wrapYaw * 0.8 * s.lookW);
       const ax = UP.clone().cross(f.applyAxisAngle(UP, wrapYaw * s.lookW)).normalize();
       rotWorld(B.Head, ax, -pitch * 0.8 * s.lookW);
     }
@@ -269,6 +342,44 @@ export class Actor {
         if (s.gesture === 'sigh') { rotWorld(B.Spine2, ax, 0.12 * env); rotWorld(B.Head, ax, 0.25 * env); }
         if (s.gesture === 'lookdown') rotWorld(B.Head, ax, 0.45 * env);
       }
+    }
+    // 目：見ている先へ向ける
+    if (tgt && B.LEye && B.REye) {
+      const front = B.Head.localToWorld(this.headFrontLocal.clone()).sub(wpos(B.Head)).normalize();
+      for (const e of [B.LEye, B.REye]) {
+        const to = tgt.clone().sub(wpos(e)).normalize();
+        const q = new THREE.Quaternion().setFromUnitVectors(front, to);
+        const ang = 2 * Math.acos(Math.min(1, Math.abs(q.w)));
+        if (ang > 0.4) q.slerp(new THREE.Quaternion(), 1 - 0.4 / ang);
+        applyWorldRot(e, q);
+      }
+    }
+  }
+
+  // 顔：まばたき・話す口・表情
+  applyFace(dt) {
+    if (!this.faces.length) return;
+    const s = this.s, F = this.face;
+    this.blinkT -= dt;
+    if (this.blinkT <= 0) { this.blink = 1; this.blinkT = 2 + Math.random() * 3.5; }
+    const bl = this.blink > 0 ? Math.sin(Math.PI * (1 - this.blink)) : 0;
+    this.blink = Math.max(0, this.blink - dt / 0.16);
+    const g = s.gesture;
+    const smileT = Math.max(s.smile, g === 'nod' ? 0.45 : 0);
+    const worryT = Math.max(s.worry, g === 'tilt' || g === 'sigh' ? 0.6 : g === 'flinch' ? 0.8 : 0);
+    F.smile += (smileT - F.smile) * Math.min(1, dt * 4);
+    F.worry += (worryT - F.worry) * Math.min(1, dt * 4);
+    const jawT = s.talking ? (0.18 + 0.5 * Math.abs(Math.sin(this.t * 11.0) * Math.sin(this.t * 4.3 + 1))) : 0;
+    F.jaw += (jawT - F.jaw) * Math.min(1, dt * 18);
+    const lookDown = Math.min(0.5, Math.max(0, s.bow - 10) / 40);
+    for (const m of this.faces) {
+      const d = m.morphTargetDictionary, inf = m.morphTargetInfluences;
+      const set = (k, v) => { if (d[k] != null) inf[d[k]] = v; };
+      set('AK_09_EyeBlinkLeft', Math.max(bl, lookDown)); set('AK_10_EyeBlinkRight', Math.max(bl, lookDown));
+      set('AK_25_JawOpen', F.jaw * 0.55);
+      set('AK_44_MouthSmileLeft', F.smile * 0.6); set('AK_45_MouthSmileRight', F.smile * 0.6);
+      set('AK_03_BrowInnerUp', F.worry * 0.7);
+      set('AK_30_MouthFrownLeft', F.worry * 0.35); set('AK_31_MouthFrownRight', F.worry * 0.35);
     }
   }
 }

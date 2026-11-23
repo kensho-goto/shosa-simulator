@@ -238,9 +238,9 @@ export function buildHouse(scene, renderer) {
   const cord = new THREE.Mesh(new THREE.CylinderGeometry(0.004, 0.004, 0.35), new THREE.MeshStandardMaterial({ color: '#222' }));
   cord.position.set(0, 2.24, 3.76); g.add(cord);
   const pl = new THREE.PointLight('#ffd9a8', 5.5, 7, 1.6);
-  pl.position.set(0, 1.85, 3.76); pl.castShadow = true; pl.shadow.mapSize.set(1024, 1024); pl.shadow.bias = -0.0015; pl.shadow.radius = 6; g.add(pl);
+  pl.position.set(0, 1.85, 3.76); pl.castShadow = true; pl.shadow.mapSize.set(1024, 1024); pl.shadow.bias = -0.0015; pl.shadow.radius = 6; pl.userData.shadowHigh = true; pl.userData.shadowLow = true; g.add(pl);
   // 廊下の明かり
-  const hl = new THREE.PointLight('#ffe0b8', 2.2, 5, 1.8); hl.position.set(0, 2.1, 0.8); hl.castShadow = true; hl.shadow.mapSize.set(512, 512); hl.shadow.radius = 5; g.add(hl);
+  const hl = new THREE.PointLight('#ffe0b8', 2.2, 5, 1.8); hl.position.set(0, 2.1, 0.8); hl.castShadow = true; hl.shadow.mapSize.set(512, 512); hl.shadow.radius = 5; hl.userData.shadowHigh = true; hl.userData.shadowLow = false; g.add(hl);
   // 外の柔らかい光（影は小さく）
   const sun = new THREE.DirectionalLight('#fff1dc', 0.5); sun.position.set(4, 5, 3); sun.target.position.set(0, 0, 3.5);
   sun.castShadow = true; sun.shadow.mapSize.set(1024, 1024); Object.assign(sun.shadow.camera, { left: -4, right: 4, top: 5, bottom: -5, near: 0.5, far: 15 });

@@ -7,7 +7,8 @@
   "scripts": {
     "start": "node tools/serve.mjs",
     "items": "node tools/build-items.mjs && node tools/validate-items.mjs",
-    "playtest": "node tools/play-bot.mjs docs/screenshots"
+    "playtest": "node tools/play-bot.mjs docs/screenshots",
+    "playtest:phone": "node tools/play-bot-touch.mjs docs/screenshots-phone"
   },
   "dependencies": {
     "three": "0.170.0"
