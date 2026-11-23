@@ -34,17 +34,46 @@ function tex(url, srgb) {
   t.anisotropy = 4;
   return t;
 }
-export async function loadModels(onProgress) {
+// 肌：光が少し中まで入って、影の境目が赤くにじむ（人の肌らしさ）
+const SKIN_RECT_SPEC = 'reflectedLight.directSpecular += lightColor * fresnel * LTC_Evaluate( normal, viewDir, position, mInv, rectCoords );';
+const SKIN_DIFFUSE = 'reflectedLight.directDiffuse += irradiance * BRDF_Lambert( material.diffuseColor );';
+function skin(mat, amount) {
+  mat.onBeforeCompile = sh => {
+    sh.uniforms.uSkin = { value: amount };
+    sh.fragmentShader = 'uniform float uSkin;\n' + sh.fragmentShader.replace('#include <lights_physical_pars_fragment>',
+      THREE.ShaderChunk.lights_physical_pars_fragment
+        .replace(SKIN_RECT_SPEC, 'reflectedLight.directSpecular += ( 1.0 - 0.75 * uSkin ) * lightColor * fresnel * LTC_Evaluate( normal, viewDir, position, mInv, rectCoords );')
+        .replace(SKIN_DIFFUSE, `{
+        float nl = dot( geometryNormal, directLight.direction );
+        float wrapNL = saturate( ( nl + 0.45 ) / 1.45 );
+        vec3 scatter = mix( vec3( 1.0, 0.38, 0.28 ), vec3( 1.0 ), smoothstep( 0.0, 0.6, nl ) );
+        vec3 wrapped = directLight.color * wrapNL * scatter;
+        reflectedLight.directDiffuse += mix( irradiance, wrapped, uSkin ) * BRDF_Lambert( material.diffuseColor );
+      }`));
+  };
+  mat.customProgramCacheKey = () => 'skin' + amount;
+  return mat;
+}
+export async function loadModels(onProgress, { hi = true } = {}) {
   let done = 0; const names = Object.keys(PEOPLE);
   await Promise.all(names.map(async n => {
     const { code } = PEOPLE[n]; const dir = `assets/people/${n}/`;
     const gltf = await loader.loadAsync(dir + n + '.glb');
+    const op = tex(dir + code + (hi ? '_opacity_2k.png' : '_opacity_color.png'), true);
     const mats = {
-      body: new THREE.MeshStandardMaterial({ name: 'body', map: tex(dir + code + '_body.jpg', true), normalMap: tex(dir + code + '_body_normal.jpg'), roughness: 0.82 }),
-      head: new THREE.MeshStandardMaterial({ name: 'head', map: tex(dir + code + '_head_color.jpg', true), normalMap: tex(dir + code + '_head_normal.jpg'), roughness: 0.58 }),
-      opacity: new THREE.MeshStandardMaterial({ name: 'opacity', map: tex(dir + code + '_opacity_color.png', true), roughness: 0.7, alphaTest: 0.12, alphaToCoverage: true, side: THREE.DoubleSide }),
+      body: skin(new THREE.MeshStandardMaterial({ name: 'body', map: tex(dir + code + '_body.jpg', true), normalMap: tex(dir + code + '_body_normal.jpg'), roughnessMap: tex(dir + code + '_body_rough.jpg'), roughness: 1 }), 0.6),
+      head: skin(new THREE.MeshPhysicalMaterial({
+        name: 'head', map: tex(dir + code + (hi ? '_head_color_2k.jpg' : '_head_color.jpg'), true), normalMap: tex(dir + code + (hi ? '_head_normal_2k.jpg' : '_head_normal.jpg')),
+        roughnessMap: tex(dir + code + '_head_rough.jpg'), roughness: 1, specularIntensity: 0.55,
+        sheen: 0.35, sheenRoughness: 0.75, sheenColor: new THREE.Color('#ffd9c9'),
+      }), 1),
+      // 髪：1回目は芯だけ（くっきり・奥行きあり）、2回目はふちだけ半透明で重ねる
+      hair: new THREE.MeshStandardMaterial({ name: 'opacity', map: op, roughness: 0.55, alphaTest: 0.5, side: THREE.DoubleSide }),
+      hairEdge: new THREE.MeshStandardMaterial({ name: 'hairEdge', map: op, roughness: 0.55, transparent: true, depthWrite: false, alphaTest: 0.12, side: THREE.DoubleSide }),
     };
-    mats.head.normalScale.set(0.7, 0.7);
+    mats.head.normalScale.set(0.8, 0.8);
+    mats.opacity = mats.hair;
+    cache[n + ':mats'] = mats;
     gltf.scene.traverse(o => {
       if (!o.isMesh) return;
       const pickMat = m => /head/.test(m.name) ? mats.head : /opacity/.test(m.name) ? mats.opacity : mats.body;
@@ -95,6 +124,18 @@ export class Actor {
         if (o.morphTargetDictionary && Object.keys(o.morphTargetDictionary).length) this.faces.push(o);
       }
     });
+    // 髪のふち（半透明）を、同じ骨で動く2枚目として重ねる
+    const mats = cache[person + ':mats'];
+    const hairMeshes = []; this.model.traverse(o => { if (o.isSkinnedMesh && [].concat(o.material).includes(mats.hair)) hairMeshes.push(o); });
+    const hide = new THREE.MeshBasicMaterial({ visible: false });
+    for (const o of hairMeshes) {
+      const ms = Array.isArray(o.material) ? o.material.map(m => m === mats.hair ? mats.hairEdge : hide) : mats.hairEdge;
+      const e = new THREE.SkinnedMesh(o.geometry, ms);
+      e.bind(o.skeleton, o.bindMatrix); e.renderOrder = 2; e.frustumCulled = false; e.castShadow = false;
+      if (o.morphTargetInfluences) { e.morphTargetInfluences = o.morphTargetInfluences; e.morphTargetDictionary = o.morphTargetDictionary; }
+      e.position.copy(o.position); e.quaternion.copy(o.quaternion); e.scale.copy(o.scale);
+      o.parent.add(e);
+    }
     this.root.updateMatrixWorld(true);
     // 骨
     const all = {}; this.model.traverse(o => { if (o.isBone || /^Bip01/.test(o.name)) all[o.name] = o; });
@@ -313,21 +354,45 @@ export class Actor {
   applyHead(dt) {
     const s = this.s, B = this.bones;
     const hp = wpos(B.Head);
-    let tgt = null;
-    // 視線（首の骨は肩につながっているので、頭だけを回す）
-    if (s.look && s.lookW > 0.01) {
-      tgt = (s.look.isVector3 ? s.look : s.look.headPos ? s.look.headPos() : wpos(s.look));
+    const G = this.gaze || (this.gaze = { yaw: 0, pitch: 0, w: 0, sac: new THREE.Vector2(), sacT: 0, last: null });
+    // 見る先：はっきり決めた先 → なければ、いま話している人（ゆるく）
+    let look = s.look, lw = s.lookW;
+    if (!(look && lw > 0.01) && s.idleLook && s.idleLook !== this) { look = s.idleLook; lw = 0.7; }
+    // お辞儀の間は目を伏せる（下げながら相手を見上げない）
+    lw *= THREE.MathUtils.clamp(1 - (s.bow - 8) / 18, 0, 1);
+    let tgt = null, wantYaw = 0, wantPitch = 0;
+    if (look && lw > 0.01) {
+      tgt = (look.isVector3 ? look : look.headPos ? look.headPos() : wpos(look));
       const d = tgt.clone().sub(hp);
-      const f = this.forward();
-      const yaw = THREE.MathUtils.clamp(Math.atan2(d.x, d.z) - this.yaw, -1.2, 1.2);
-      const wrapYaw = Math.atan2(Math.sin(yaw), Math.cos(yaw));
-      const horiz = Math.hypot(d.x, d.z);
-      const pitch = THREE.MathUtils.clamp(Math.atan2(d.y, horiz), -0.7, 0.5);
-      rotWorld(B.Spine2, UP, wrapYaw * 0.15 * s.lookW);
-      rotWorld(B.Head, UP, wrapYaw * 0.8 * s.lookW);
-      const ax = UP.clone().cross(f.applyAxisAngle(UP, wrapYaw * s.lookW)).normalize();
-      rotWorld(B.Head, ax, -pitch * 0.8 * s.lookW);
+      let yaw = Math.atan2(d.x, d.z) - this.yaw;
+      yaw = Math.atan2(Math.sin(yaw), Math.cos(yaw));          // 先に -180〜180 にそろえてから
+      wantYaw = THREE.MathUtils.clamp(yaw, -1.35, 1.35);         // 首の回る範囲におさめる
+      wantPitch = THREE.MathUtils.clamp(Math.atan2(d.y, Math.hypot(d.x, d.z)), -0.6, 0.45);
+      // 見る先が大きく変わったら、まばたきしながら向き直す（人のくせ）
+      const key = look.isVector3 ? null : look;
+      if (key !== G.last && Math.abs(wantYaw - G.yaw) > 0.5 && this.blink <= 0) this.blink = 1;
+      G.last = key;
     }
+    // 頭は目より少し遅れて、なめらかについてくる
+    const k = 1 - Math.exp(-dt * 5.5);
+    G.yaw += (wantYaw - G.yaw) * k; G.pitch += (wantPitch - G.pitch) * k;
+    G.w += (lw - G.w) * (1 - Math.exp(-dt * 4));
+    const yawW = G.yaw * G.w, pitchW = G.pitch * G.w;
+    if (Math.abs(yawW) > 1e-4 || Math.abs(pitchW) > 1e-4) {
+      const f = this.forward();
+      rotWorld(B.Spine1, UP, yawW * 0.08);
+      rotWorld(B.Spine2, UP, yawW * 0.17);
+      rotWorld(B.Head, UP, yawW * 0.68);
+      const ax = UP.clone().cross(f.applyAxisAngle(UP, yawW)).normalize();
+      rotWorld(B.Spine2, ax, -pitchW * 0.12);
+      rotWorld(B.Head, ax, -pitchW * 0.78);
+      // 横を向くとき、首がわずかに傾く
+      rotWorld(B.Head, f.clone().applyAxisAngle(UP, yawW), -yawW * 0.08);
+    }
+    // 目の小さなゆれ（見つめていても、目はわずかに動く）
+    G.sacT -= dt;
+    if (G.sacT <= 0) { G.sac.set((Math.random() - 0.5) * 0.05, (Math.random() - 0.5) * 0.03); G.sacT = 0.35 + Math.random() * 1.6; }
+    this._eyeTgt = tgt && G.w > 0.05 ? tgt : null;
     // しぐさ
     if (s.gesture) {
       s.gt += dt; const u = s.gt / s.gdur;
@@ -343,14 +408,19 @@ export class Actor {
         if (s.gesture === 'lookdown') rotWorld(B.Head, ax, 0.45 * env);
       }
     }
-    // 目：見ている先へ向ける
-    if (tgt && B.LEye && B.REye) {
+    // 目：見ている先へ向ける（目が先に届く）
+    if (B.LEye && B.REye) {
       const front = B.Head.localToWorld(this.headFrontLocal.clone()).sub(wpos(B.Head)).normalize();
+      const G2 = this.gaze;
+      const side = new THREE.Vector3().crossVectors(UP, front).normalize();
       for (const e of [B.LEye, B.REye]) {
-        const to = tgt.clone().sub(wpos(e)).normalize();
+        let to;
+        if (this._eyeTgt) to = this._eyeTgt.clone().sub(wpos(e)).normalize();
+        else to = front.clone().addScaledVector(UP, -0.06).normalize();   // 何も見ていないときは少し下
+        to.addScaledVector(side, G2.sac.x).addScaledVector(UP, G2.sac.y).normalize();
         const q = new THREE.Quaternion().setFromUnitVectors(front, to);
         const ang = 2 * Math.acos(Math.min(1, Math.abs(q.w)));
-        if (ang > 0.4) q.slerp(new THREE.Quaternion(), 1 - 0.4 / ang);
+        if (ang > 0.45) q.slerp(new THREE.Quaternion(), 1 - 0.45 / ang);
         applyWorldRot(e, q);
       }
     }

@@ -34,7 +34,7 @@ let hooks = [];
 
 // ---------------- 読み込み ----------------
 async function boot() {
-  await Promise.all([loadModels(), loadEnvironment(R)]);
+  await Promise.all([loadModels(null, { hi: data.settings.quality === 'high' }), loadEnvironment(R)]);
   house = buildHouse(R.scene, R.renderer);
   R.setQuality(data.settings.quality);
   actors = {
@@ -67,7 +67,7 @@ function loop(now) {
   if (!paused) {
     runner.tick(dt);
     for (const h of hooks.slice()) h.fn(dt);
-    if (actors) { const tk = window.__shosa.ctx && window.__shosa.ctx.talking; for (const [k, a] of Object.entries(actors)) { a.s.talking = tk === k; a.update(dt); } }
+    if (actors) { const tk = window.__shosa.ctx && window.__shosa.ctx.talking; const sp = tk && actors[tk]; for (const [k, a] of Object.entries(actors)) { a.s.talking = tk === k; a.s.idleLook = sp ? (sp === a ? (k === 'player' ? actors.partner : actors.player) : sp) : null; a.update(dt); } }
     if (mode === 'title') titleCam(dt);
   }
   rig.update(paused ? 0 : dt);
