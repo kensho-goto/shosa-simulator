@@ -9,6 +9,12 @@
 - 音・家具・お辞儀や正座の動きは、まだ **仮の素材** です。完成見本の段階ではありません（`docs/assets.md`）。
 - **人による試遊はまだしていません。** 通しで確かめたのは、自動で操作する台本（パソコン用 `tools/play-bot.mjs`・スマホ用 `tools/play-bot-touch.mjs`）だけです（`docs/status.md`）。
 
+## スマホ・ほかの人に遊んでもらう
+
+公開ページ：https://kensho-goto.github.io/shosa-simulator/ （合言葉：いいんじゃ）
+
+main に取り込むと、公開ページは自動で新しくなります（`.github/workflows/pages.yml`）。合言葉の画面は `src/gate.js` です。この PC で開くとき（127.0.0.1）は合言葉を聞きません。
+
 ## 動かし方
 
 必要なもの：Node.js 18 以上、Chrome などの WebGL2 が動くブラウザー。
