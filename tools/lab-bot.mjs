@@ -75,12 +75,13 @@ await click('[data-cmd=placeB]');
 const m3 = await lastMsg(); check('持っていないのに置くは断る', !m3.ok, m3.text);
 
 // 6) 箱を持つ（遠いので歩いて近づく）→ 台Bに置く
-await click('[data-cam=talk]');
+await click('[data-cam=hands]');
 await click('[data-cmd=pick]');
-await until(() => __lab.people.main.s.grip.L > 0.5, null, 15000); await W(150); await shot('08-pick-grip');
+await until(() => __lab.people.main.s.grip.L > 0.95, null, 15000); await W(150); await shot('08-pick-grip');
 await click('[data-cam=profile]'); await W(400); await shot('09-pick-grip-profile');
 await click('[data-cam=full]');
 await until(() => __lab.ctl.main.holding && !__lab.ctl.main.busy, null, 15000); await W(400); await shot('10-holding');
+await click('[data-cam=hands]'); await W(1400); await shot('10b-hands-hold'); await click('[data-cam=full]');
 await click('[data-cmd=pick]'); const m4 = await lastMsg(); check('持っているのに持つは断る', !m4.ok, m4.text);
 await click('[data-cmd=placeB]');
 await until(() => !__lab.box.holder, null, 20000); await shot('11-place');

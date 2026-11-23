@@ -60,8 +60,8 @@ export class CharacterController {
   // いまの動作を、途中の形のまま強制で外す（最初に戻す用）
   hardReset() {
     this.task = null; this.taskName = null; this.stopReq = false; this.queue = null; this.walkGoal = null;
-    this.holding = null; this.boxGoal = null; this.handT = { L: null, R: null };
-    const s = this.actor.s; s.speed = 0; s.bow = 0; s.handsFront = 0; s.keepLook = false; s.grip.L = s.grip.R = 0; s.smile = 0; s.worry = 0;
+    this.holding = null; this.boxGoal = null; this.handT = { L: null, R: null }; this.handBox = null;
+    const s = this.actor.s; s.hand.L = s.hand.R = null; s.speed = 0; s.bow = 0; s.handsFront = 0; s.keepLook = false; s.grip.L = s.grip.R = 0; s.smile = 0; s.worry = 0;
     this.actor.reach('L', null); this.actor.reach('R', null); s.reachW.L = s.reachW.R = 0; this.actor.lookAt(null, 0);
   }
 
@@ -70,7 +70,7 @@ export class CharacterController {
     if (this.task) {
       const r = this.task.next(dt);
       if (r.done) {
-        this.task = null; const was = this.taskName; this.taskName = null; this.stopReq = false;
+        this.task = null; const was = this.taskName; this.taskName = null; this.stopReq = false; this.handBox = null;
         this.world.emit && this.world.emit('done', this, was, r.value);
         if (this.queue) { const [n, a] = this.queue; this.queue = null; const res = this.command(n, a); this.world.emit && this.world.emit('msg', this, res.msg); }
       }
@@ -79,10 +79,17 @@ export class CharacterController {
     const a = this.actor;
     if (this.holding && this.boxGoal && (!this.task || this.taskName === 'face')) this.followCarry(dt, 6);
     if (this.holding && this.boxGoal) {
-      const T = this.holdTargets();
-      a.reach('L', T.L, 1); a.reach('R', T.R, 1);
+      const it = this.holding, H = it.wristTargets(a, this.goalCenter(), a.yaw + it.yawOffset, this.boxGoal.tilt, it.gripDepth, true);
+      a.reach('L', H.T.L, 1); a.reach('R', H.T.R, 1);
+      a.s.hand.L = H.hands.L; a.s.hand.R = H.hands.R;
     } else {
       for (const k of ['L', 'R']) a.reach(k, this.handT[k], this.handT[k] ? 1 : 0);
+      // 箱へ手を伸ばしている間：手のひらを箱の面へ向け、指をそろえて開く
+      if (this.handBox) {
+        const it = this.handBox, H = it.wristTargets(a, it.center, it.yaw, it.tilt, this.handBoxDepth ?? 0, true);
+        for (const k of ['L', 'R']) { const h = H.hands[k]; a.s.hand[k] = a.s.grip[k] > 0.3 ? h : { mode: 'open', dir: h.dir, palm: h.palm }; }
+      } else if (a.s.bow > 6 || a.s.handsFront > 0.3) { a.s.hand.L = a.s.hand.R = { mode: 'together' }; }
+      else a.s.hand.L = a.s.hand.R = null;
     }
   }
 
@@ -231,6 +238,7 @@ export class CharacterController {
     yield* this.faceYaw(Math.atan2(c.x - a.pos.x, c.z - a.pos.z));
     if (this.stopReq) return 'stopped';
     s.keepLook = true; a.lookAt(item.anchor, 1);
+    this.handBox = item; this.handBoxDepth = 0;
     // 手を伸ばす（箱の少し手前・上へ → 触れる）
     const yaw = item.yaw;
     item.gripDepth = 0;
@@ -247,6 +255,7 @@ export class CharacterController {
       if (a.handPos('L').distanceTo(T.L) < 0.035 && a.handPos('R').distanceTo(T.R) < 0.035) { reached = true; break; }
     }
     if (!reached || this.stopReq) {
+      this.handBox = null;
       yield* this.retractHands(0.5);
       const b = s.bow; yield* this.tween(0.6, u => { s.bow = b * (1 - u); });
       s.keepLook = false; a.lookAt(null, 0);
@@ -255,7 +264,7 @@ export class CharacterController {
     // 握る → 持ち主になる → 持ち上げる
     yield* this.tween(0.25, u => { s.grip.L = s.grip.R = u; });
     if (!item.grab(this)) { yield* this.retractHands(0.4); s.grip.L = s.grip.R = 0; return 'taken'; }
-    this.holding = item; this.handT = { L: null, R: null };
+    this.holding = item; this.handT = { L: null, R: null }; this.handBox = null;
     this.boxGoal = { center: item.center, tilt: 0 };
     const c0 = this.boxGoal.center.clone();
     yield* this.tween(0.35, (u, dt) => { this.boxGoal.center.copy(c0).addScaledVector(UP, 0.05 * u); this.bendToward(dt, this.holdTargets()); });
@@ -284,10 +293,11 @@ export class CharacterController {
     // 面に着けてから手を離す
     const restPos = it.obj.position.clone(); restPos.y = spot.pos.y;
     const handsNow = { L: a.handPos('L'), R: a.handPos('R') };
-    it.rest(restPos, it.yaw); this.holding = null; this.boxGoal = null; this.handT = handsNow;
+    it.rest(restPos, it.yaw); this.holding = null; this.boxGoal = null; this.handT = handsNow; this.handBox = it; this.handBoxDepth = it.gripDepth;
     yield* this.tween(0.22, u => { s.grip.L = s.grip.R = 1 - u; });
     yield* this.moveHands({ L: handsNow.L.clone().addScaledVector(a.side(), 0.06).addScaledVector(UP, 0.03), R: handsNow.R.clone().addScaledVector(a.side(), -0.06).addScaledVector(UP, 0.03) }, 0.3);
     const b1 = s.bow;
+    this.handBox = null;
     yield* this.retractHands(0.55);
     yield* this.tween(0.6, u => { s.bow = b1 * (1 - u); });
     s.keepLook = false; a.lookAt(null, 0);
@@ -322,9 +332,10 @@ export class CharacterController {
     if (it.holder === this) { other.command('stop'); return yield* this.backToCarry(this.stopReq ? 'stopped' : 'notTaken'); }
     // 持ち主が移った → 手を離して下がる
     const handsNow = { L: a.handPos('L'), R: a.handPos('R') };
-    this.holding = null; this.boxGoal = null; this.handT = handsNow;
+    this.holding = null; this.boxGoal = null; this.handT = handsNow; this.handBox = it; this.handBoxDepth = 0.05;
     yield* this.tween(0.2, u => { s.grip.L = s.grip.R = 1 - u; });
     yield* this.moveHands({ L: handsNow.L.clone().addScaledVector(a.forward(), -0.08), R: handsNow.R.clone().addScaledVector(a.forward(), -0.08) }, 0.3);
+    this.handBox = null;
     yield* this.retractHands(0.5);
     s.keepLook = false; a.lookAt(o, 1);
     yield* this.tween(0.6, u => { s.bow = 8 + 10 * u; });
@@ -341,6 +352,7 @@ export class CharacterController {
     while (item.offeredBy !== giver && !this.stopReq) { yield; if (item.holder !== giver) return 'cancel'; }
     if (this.stopReq) return 'stopped';
     s.keepLook = true; a.lookAt(item.anchor, 1); s.smile = 0.25;
+    this.handBox = item; this.handBoxDepth = -0.05;
     // 相手が持っている側と反対の半分を持つ
     const depth = -0.05;
     const targetNow = () => item.wristTargets(a, item.center, item.yaw, item.tilt, depth);
@@ -353,10 +365,10 @@ export class CharacterController {
       const dt = yield; w += dt; const T = targetNow(); this.handT = T; this.bendToward(dt, T, 25);
       if (a.handPos('L').distanceTo(T.L) < 0.035 && a.handPos('R').distanceTo(T.R) < 0.035) { ok = true; break; }
     }
-    if (!ok) { yield* this.retractHands(0.4); return 'unreachable'; }
+    if (!ok) { this.handBox = null; yield* this.retractHands(0.4); return 'unreachable'; }
     yield* this.tween(0.25, u => { s.grip.L = s.grip.R = u; });
     if (!item.transfer(giver, this, depth)) { yield* this.retractHands(0.4); s.grip.L = s.grip.R = 0; return 'cancel'; }
-    this.holding = item; this.handT = { L: null, R: null };
+    this.holding = item; this.handT = { L: null, R: null }; this.handBox = null;
     this.boxGoal = { center: item.center, tilt: 0 };
     yield* this.wait(0.35);
     const c0 = this.boxGoal.center.clone();

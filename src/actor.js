@@ -105,6 +105,25 @@ function aim(bone, child, dir) {
   const q = new THREE.Quaternion().setFromUnitVectors(cur, dir.clone().normalize());
   applyWorldRot(bone, q);
 }
+// 手の形の計算用の速い版：手の骨は回すたびに子まで行列を更新するので、親をたどらずに行列から読む
+const _p = new THREE.Vector3(), _s = new THREE.Vector3(), _q = new THREE.Quaternion(), _q2 = new THREE.Quaternion();
+const wp = o => new THREE.Vector3().setFromMatrixPosition(o.matrixWorld);
+function rotF(bone, axis, angle) {
+  if (!angle) return;
+  bone.parent.matrixWorld.decompose(_p, _q2, _s);
+  _q.setFromAxisAngle(axis, angle);
+  const inv = _q2.clone().invert();
+  bone.quaternion.premultiply(inv.multiply(_q).multiply(_q2));
+  bone.updateMatrixWorld(true);
+}
+function aimF(bone, child, dir) {
+  const cur = wp(child).sub(wp(bone)).normalize();
+  const q = new THREE.Quaternion().setFromUnitVectors(cur, dir.clone().normalize());
+  bone.parent.matrixWorld.decompose(_p, _q2, _s);
+  const inv = _q2.clone().invert();
+  bone.quaternion.premultiply(inv.multiply(q).multiply(_q2));
+  bone.updateMatrixWorld(true);
+}
 const ease = t => t * t * (3 - 2 * t);
 const clamp01 = v => THREE.MathUtils.clamp(v, 0, 1);
 
@@ -144,7 +163,7 @@ export class Actor {
     this.fingers = { L: [], R: [] };
     // 指の骨の名前（Finger1, Finger11, Finger12）
     for (const c of ['L', 'R']) this.fingers[c] = FINGERS.map(f => [all[`Bip01_${c}_${f}`], all[`Bip01_${c}_${f}1`], all[`Bip01_${c}_${f}2`]].filter(Boolean));
-    this.thumbs = { L: [all.Bip01_L_Finger0, all.Bip01_L_Finger01], R: [all.Bip01_R_Finger0, all.Bip01_R_Finger01] };
+    this.thumbs = { L: [all.Bip01_L_Finger0, all.Bip01_L_Finger01, all.Bip01_L_Finger02].filter(Boolean), R: [all.Bip01_R_Finger0, all.Bip01_R_Finger01, all.Bip01_R_Finger02].filter(Boolean) };
     // 元の姿勢（毎フレームここから組み直す）
     this.rest = [];
     this.model.traverse(o => { if (o.isBone || o.name === 'Bip01') this.rest.push([o, o.quaternion.clone(), o.position.clone()]); });
@@ -154,6 +173,7 @@ export class Actor {
     // 状態
     this.s = {
       speed: 0, seated: 0, seatedTarget: 0, bow: 0, bowSeated: 0, grip: { L: 0, R: 0 }, keepLook: false,
+      hand: { L: null, R: null }, // 手の形の指定 { mode: 'relax'|'together'|'open'|'contact', contact: { point, normal, up, bottom }, dir }
       reach: { L: null, R: null }, reachW: { L: 0, R: 0 },
       look: null, lookW: 0, gesture: null, gt: 0, lean: 0, wobble: 0, headDown: 0,
       handsFront: 0, talking: false, smile: 0, worry: 0,
@@ -183,7 +203,7 @@ export class Actor {
   turnTo(x, z) { this.yaw = Math.atan2(x - this.pos.x, z - this.pos.z); }
 
   update(dt) {
-    this.t += dt;
+    this.t += dt; this._dt = dt;
     const s = this.s;
     for (const [b, q, p] of this.rest) { b.quaternion.copy(q); b.position.copy(p); }
     this.model.position.set(0, 0, 0);
@@ -301,7 +321,7 @@ export class Actor {
       const { pos: def, hang } = this.defaultHand(L, sg, seat, deg);
       const tgt = target ? def.clone().lerp(target, wgt) : def;
       this.ik(L, sg, tgt, target ? hang * (1 - wgt) : hang);
-      this.curl(k, (target ? 0.22 : 0.35) + (s.grip ? s.grip[k] : 0) * 0.55 * wgt);
+      this.poseHand(k, L, target ? wgt : 0);
     }
   }
   hangHand(L, sg) {
@@ -355,7 +375,91 @@ export class Actor {
       aim(ha, mid, fore.clone().normalize().lerp(reachDir, 1 - hang));
     }
   }
-  // 指を軽く曲げる
+  // ---- 手の形（指ごとに曲げる・そろえる・物の面に沿わせる）----
+  // 手のひらの向き（手のひらから外へ）と、指の向き（手首 → 中指の付け根）
+  handFrame(k) {
+    const L = k === 'L' ? 'Left' : 'Right', B = this.bones, fs = this.fingers[k];
+    const h = wp(B[L + 'Hand']), m = wp(fs[1][0]);
+    const dir = m.clone().sub(h).normalize();
+    const across = wp(fs[0][0]).sub(wp(fs[3][0])).normalize();           // 小指 → 人差し指
+    const n = dir.clone().cross(across).multiplyScalar(k === 'L' ? 1 : -1).normalize();
+    return { h, dir, across, n };
+  }
+  poseHand(k, L, reachW) {
+    const B = this.bones, fs = this.fingers[k], th = this.thumbs[k], s = this.s;
+    if (!fs.length || fs.some(f => !f[0])) return;
+    const spec = s.hand && s.hand[k];
+    const mode = spec ? spec.mode : 'relax';
+    const grip = s.grip ? s.grip[k] : 0;
+    const t = this.t;
+    // 1) 手首の向き：指の向きを合わせてから、手のひらの向きを合わせる（ひねり）
+    const ha = B[L + 'Hand'];
+    if (spec && spec.dir) aimF(ha, fs[1][0], spec.dir);
+    if (spec && spec.palm) {
+      const F = this.handFrame(k);
+      const want = spec.palm.clone().addScaledVector(F.dir, -spec.palm.dot(F.dir)).normalize();
+      const cur = F.n.clone().addScaledVector(F.dir, -F.n.dot(F.dir)).normalize();
+      const ang = Math.atan2(cur.clone().cross(want).dot(F.dir), cur.dot(want));
+      rotF(ha, F.dir, ang);
+    }
+    let F = this.handFrame(k);
+    // 2) 指をそろえる（付け根で、中指の向きへ寄せる）
+    const together = { relax: 0.45, together: 0.9, open: 0.6, contact: 0.85 }[mode] ?? 0.5;
+    const mid = wp(fs[1][1]).sub(wp(fs[1][0])).normalize();
+    for (const [i, f] of fs.entries()) {
+      if (i === 1) continue;
+      const d = wp(f[1]).sub(wp(f[0])).normalize();
+      const dd = d.clone().addScaledVector(F.n, -d.dot(F.n)).normalize(), mm = mid.clone().addScaledVector(F.n, -mid.dot(F.n)).normalize();
+      const ang = Math.atan2(dd.clone().cross(mm).dot(F.n), dd.dot(mm));
+      rotF(f[0], F.n, ang * together);
+    }
+    // 3) 指を曲げる：人差し指 → 小指の順に少しずつ深く（人の手の自然な形）
+    const cascade = [0, 0.08, 0.15, 0.24];
+    const base = { relax: 0.22, together: 0.05, open: 0.02, contact: 0.06 }[mode] ?? 0.2;
+    const curlJoint = (bone, child, amt) => {
+      const d = wp(child).sub(wp(bone)).normalize();
+      const ax = d.clone().cross(F.n).normalize();                 // 手のひら側へ曲げる軸
+      if (ax.lengthSq() > 1e-6) rotF(bone, ax, amt);
+    };
+    const tipOf = f => { const a = wp(f[f.length - 2]), b = wp(f[f.length - 1]); return b.clone().add(b.clone().sub(a).multiplyScalar(0.85)); };
+    for (const [i, f] of fs.entries()) {
+      const micro = mode === 'relax' ? Math.sin(t * 0.6 + i * 1.7 + (k === 'L' ? 0 : 2)) * 0.025 : 0;
+      const g = mode === 'contact' ? 0 : grip * 0.55 * reachW;   // 物の面がわからないときの握り
+      const c0 = base + cascade[i] * (mode === 'together' ? 0.4 : 1) + g + micro;
+      const segs = [[f[0], f[1], c0 * 0.7], [f[1], f[2], c0 * 1.25]];
+      for (const [b, c, a] of segs) curlJoint(b, c, a);
+      // 先の関節（子の骨がないので、手前の関節の向きで曲げる）
+      const d2 = wp(f[2]).sub(wp(f[1])).normalize(); const ax2 = d2.clone().cross(F.n).normalize();
+      rotF(f[2], ax2, c0 * 0.9);
+      // 物の面に沿わせる：指先が底より下へ出たら、底の下へ回り込ませる
+      if (mode === 'contact' && spec.contact && grip > 0.01) {
+        const C = spec.contact;
+        for (const [j, bone] of [[1, f[1]], [2, f[2]]].map(([j, b]) => [j, b])) {
+          const jp = wp(bone), h = jp.clone().sub(C.bottom).dot(C.up);
+          if (h < 0.018) {
+            const nxt = j === 1 ? wp(f[2]) : tipOf(f);
+            const d = nxt.sub(jp).normalize(); const ax = d.clone().cross(F.n).normalize();
+            rotF(bone, ax, (j === 1 ? 1.25 : 0.95) * grip);
+          }
+        }
+      }
+    }
+    // 4) 親指：人差し指の横へ寄せ、少し曲げる。物を持つときは面へ添える
+    if (th.length >= 2) {
+      const idx = wp(fs[0][0]);
+      const t0 = wp(th[0]), t1 = wp(th[1]);
+      const want = idx.clone().sub(t0).normalize().lerp(F.dir, 0.55).addScaledVector(F.n, mode === 'contact' ? 0.25 : 0.4).normalize();
+      const adduct = { relax: 0.35, together: 0.75, open: 0.2, contact: 0.6 }[mode] ?? 0.35;
+      aimF(th[0], th[1], t1.clone().sub(t0).normalize().lerp(want, adduct).normalize());
+      const flex = { relax: 0.25, together: 0.08, open: 0.05, contact: 0.15 + grip * 0.25 }[mode] ?? 0.2;
+      for (let i = 1; i < th.length; i++) {
+        const next = i + 1 < th.length ? wp(th[i + 1]) : wp(th[i]).add(wp(th[i]).sub(wp(th[i - 1])));
+        const d = next.sub(wp(th[i])).normalize(); const ax = d.clone().cross(F.n).normalize();
+        if (ax.lengthSq() > 1e-6) rotF(th[i], ax, flex);
+      }
+    }
+  }
+  // 指を軽く曲げる（古い呼び方。いまは poseHand を使う）
   curl(k, amt) {
     const fs = this.fingers[k]; if (!fs.length || !fs[0][0] || !fs[3] || !fs[3][0]) return;
     const across = wpos(fs[0][0]).sub(wpos(fs[3][0])).normalize();

@@ -2,7 +2,8 @@
 import * as THREE from 'three';
 
 const UP = new THREE.Vector3(0, 1, 0);
-export const WRIST = { out: 0.02, back: 0.075, up: 0.015 }; // 手のひらの中心 → 手首（骨の位置）のずれ
+export const WRIST = { out: 0.022, back: 0.075, up: 0.0 }; // 手のひらの中心 → 手首（骨の位置）のずれ
+export const GRIP = { up: 0.012, angle: 0.5 }; // 手のひらは側面の中ほどより少し上。指は前へ、少し下向き（底の下へ指先を回す）
 
 export class Holdable {
   constructor(obj, { name, w, h, d, floorAt }) {
@@ -31,33 +32,42 @@ export class Holdable {
     return true;
   }
   release(ctl) { if (this.holder === ctl) this.holder = null; }
-  // ある人が、この箱をある姿勢（center, yaw, tilt）で持つときの、左右の手首の目標
-  wristTargets(actor, center, yaw, tilt, gripDepth = this.gripDepth) {
-    const f = actor.forward(), s = actor.side();
+  // 箱の向き（横・上）と、持つ人から見た指の向き
+  frame(actor, yaw, tilt) {
     const q = new THREE.Quaternion().setFromAxisAngle(UP, yaw).multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), tilt));
-    const bx = new THREE.Vector3(1, 0, 0).applyQuaternion(q);              // 箱の横
-    const sign = bx.dot(s) >= 0 ? 1 : -1;                                   // 持ち主の左に来る面
-    const half = this.size.w / 2 + 0.008;
-    const out = {};
+    const bx = new THREE.Vector3(1, 0, 0).applyQuaternion(q), U = new THREE.Vector3(0, 1, 0).applyQuaternion(q);
+    const sign = bx.dot(actor.side()) >= 0 ? 1 : -1;                        // 持ち主の左に来る面
+    const f = actor.forward(); f.addScaledVector(bx, -f.dot(bx)).normalize();
+    const dir = f.clone().multiplyScalar(Math.cos(GRIP.angle)).addScaledVector(U, -Math.sin(GRIP.angle)).normalize();
+    return { q, bx, U, sign, f, dir };
+  }
+  // ある人が、この箱をある姿勢（center, yaw, tilt）で持つときの、左右の手首の目標と、手のひらを当てる面
+  wristTargets(actor, center, yaw, tilt, gripDepth = this.gripDepth, withHands = false) {
+    const { bx, U, sign, f, dir } = this.frame(actor, yaw, tilt);
+    const half = this.size.w / 2 + 0.006;
+    const out = {}, hands = {};
     for (const [k, sg] of [['L', 1], ['R', -1]]) {
-      const grip = center.clone().addScaledVector(bx, sg * sign * half).addScaledVector(f, gripDepth);
-      out[k] = grip.addScaledVector(s, sg * WRIST.out).addScaledVector(f, -WRIST.back).addScaledVector(UP, WRIST.up);
+      const N = bx.clone().multiplyScalar(sg * sign);                       // 面の外向き（手のある側）
+      const grip = center.clone().addScaledVector(N, half).addScaledVector(f, gripDepth).addScaledVector(U, GRIP.up);
+      out[k] = grip.clone().addScaledVector(N, WRIST.out).addScaledVector(dir, -WRIST.back).addScaledVector(U, WRIST.up);
+      hands[k] = { mode: 'contact', dir, palm: N.clone().negate(), contact: { point: grip, normal: N, up: U, bottom: center.clone().addScaledVector(U, -this.size.h / 2) } };
     }
-    return out;
+    return withHands ? { T: out, hands } : out;
   }
   // 持ち主の実際の手首から、箱の位置と傾きを決める（毎フレーム、人物の計算のあと）
   update(dt) {
     if (this.holder) {
-      const a = this.holder.actor, f = a.forward(), s = a.side();
+      const a = this.holder.actor, s = a.side();
       const wl = a.handPos('L'), wr = a.handPos('R');
       const mid = wl.clone().add(wr).multiplyScalar(0.5);
-      const center = mid.addScaledVector(f, WRIST.back).addScaledVector(UP, -WRIST.up).addScaledVector(f, -this.gripDepth);
       const across = wl.clone().sub(wr); const horiz = Math.hypot(across.x, across.z);
       const tiltLR = Math.atan2(across.y, horiz);                            // 左手が高いと正
       const yaw = a.yaw + this.yawOffset; this._yaw = yaw;
-      const bx = new THREE.Vector3(Math.cos(yaw), 0, -Math.sin(yaw));
-      this.tilt = tiltLR * (bx.dot(s) >= 0 ? 1 : -1);
-      const q = new THREE.Quaternion().setFromAxisAngle(UP, yaw).multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), this.tilt));
+      const bx0 = new THREE.Vector3(Math.cos(yaw), 0, -Math.sin(yaw));
+      this.tilt = tiltLR * (bx0.dot(s) >= 0 ? 1 : -1);
+      // wristTargets の逆：手首の真ん中から箱の中心を出す
+      const { q, U, f, dir } = this.frame(a, yaw, this.tilt);
+      const center = mid.addScaledVector(dir, WRIST.back).addScaledVector(U, -WRIST.up - GRIP.up).addScaledVector(f, -this.gripDepth);
       this.obj.quaternion.copy(q);
       this.obj.position.copy(center).addScaledVector(new THREE.Vector3(0, 1, 0).applyQuaternion(q), -this.size.h / 2);
       return;
