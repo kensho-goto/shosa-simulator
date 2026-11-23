@@ -1,0 +1,15 @@
+{
+  "name": "shosa-simulator",
+  "version": "0.1.0",
+  "private": true,
+  "description": "日本の儀式・作法・慣習200項目を扱う3Dの所作シミュレーター（試作）",
+  "type": "module",
+  "scripts": {
+    "start": "node tools/serve.mjs",
+    "items": "node tools/build-items.mjs && node tools/validate-items.mjs",
+    "playtest": "node tools/play-bot.mjs docs/screenshots"
+  },
+  "dependencies": {
+    "three": "0.170.0"
+  }
+}
