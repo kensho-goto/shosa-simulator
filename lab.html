@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>人物の確認室</title>
+<link rel="icon" href="data:,">
+<script type="importmap">
+{ "imports": {
+  "three": "./vendor/three-build/three.module.js",
+  "three/addons/": "./vendor/three-addons/"
+} }
+</script>
+<style>
+  :root { --ink:#f4efe6; --shade:rgba(10,8,6,.82); --gold:#d8b46a; --bad:#e8806c; }
+  html,body { margin:0; height:100%; background:#0b0907; color:var(--ink); font-family:"Hiragino Sans","Yu Gothic",sans-serif; overflow:hidden; }
+  canvas { display:block; width:100vw; height:100vh; }
+  #panel { position:fixed; right:12px; top:12px; bottom:12px; width:300px; overflow:auto; background:var(--shade); border:1px solid rgba(216,180,106,.35); padding:10px 12px; font-size:13px; }
+  #panel.hide { display:none; }
+  #panel h2 { font-size:12px; letter-spacing:.15em; color:var(--gold); margin:12px 0 6px; font-weight:600; }
+  #panel h2:first-child { margin-top:0; }
+  .row { display:flex; flex-wrap:wrap; gap:5px; }
+  button, select { font:inherit; font-size:12.5px; color:var(--ink); background:rgba(255,255,255,.07); border:1px solid rgba(244,239,230,.25); padding:5px 8px; cursor:pointer; }
+  button:hover { background:rgba(216,180,106,.18); }
+  button.on { border-color:var(--gold); color:var(--gold); }
+  select { width:100%; }
+  kbd { font-size:10px; opacity:.6; margin-left:3px; }
+  #status { position:fixed; left:12px; top:12px; background:var(--shade); padding:8px 12px; font-size:13px; line-height:1.7; min-width:260px; }
+  #status b { color:var(--gold); font-weight:600; }
+  #msg { position:fixed; left:12px; bottom:12px; background:var(--shade); padding:8px 12px; font-size:14px; max-width:60vw; }
+  #msg.no { color:var(--bad); }
+  #toggle { position:fixed; right:12px; bottom:12px; z-index:2; }
+  #gate{position:fixed;inset:0;z-index:100;display:flex;align-items:center;justify-content:center;background:radial-gradient(ellipse at 50% 40%,#2a2119 0%,#0b0907 75%)}
+  #gate[hidden]{display:none}
+  #gate>div{text-align:center;padding:24px 16px}
+  #gate h1{font-family:"Hiragino Mincho ProN","Yu Mincho",serif;font-weight:500;font-size:clamp(24px,5vw,36px);letter-spacing:.2em;margin:0 0 18px}
+  #gate p{margin:0 0 12px;font-size:14px;letter-spacing:.1em;opacity:.85}
+  #gate #gateMsg{color:var(--bad);min-height:1.4em;margin-top:8px}
+  #gate input{font:inherit;font-size:18px;width:min(260px,70vw);padding:10px 12px;text-align:center;color:var(--ink);background:rgba(0,0,0,.4);border:1px solid rgba(216,180,106,.6);outline:none}
+  #gate button{font-size:17px;letter-spacing:.3em;padding:10px 34px;color:#0b0907;background:var(--gold);border:0;margin-top:4px}
+</style>
+</head>
+<body>
+<canvas id="view"></canvas>
+<div id="status">読み込み中…</div>
+<div id="msg"></div>
+<div id="panel">
+  <h2>操作する人</h2>
+  <div class="row" id="who"><button data-who="main" class="on">本人</button><button data-who="partner">相手役</button></div>
+  <h2>動作</h2>
+  <div class="row">
+    <button data-cmd="idle">待機<kbd>I</kbd></button>
+    <button data-cmd="stop">止まる<kbd>S</kbd></button>
+    <button data-cmd="bow">お辞儀<kbd>O</kbd></button>
+    <button data-cmd="pick">箱を持つ<kbd>G</kbd></button>
+    <button data-cmd="placeA">台Aに置く</button>
+    <button data-cmd="placeB">台Bに置く<kbd>H</kbd></button>
+    <button data-cmd="give">相手に渡す<kbd>T</kbd></button>
+    <button data-cmd="reset">最初に戻す<kbd>R</kbd></button>
+  </div>
+  <h2>見る</h2>
+  <div class="row">
+    <button data-look="camera">こちら<kbd>Q</kbd></button>
+    <button data-look="other">相手<kbd>E</kbd></button>
+    <button data-look="box">箱<kbd>B</kbd></button>
+    <button data-look="none">自由<kbd>X</kbd></button>
+  </div>
+  <h2>歩く（床を押しても歩きます）</h2>
+  <div class="row">
+    <button data-walk="center">部屋の中央<kbd>W</kbd></button>
+    <button data-walk="A">台Aの前</button>
+    <button data-walk="B">台Bの前</button>
+    <button data-walk="other">相手の前</button>
+  </div>
+  <h2>不器用さ（失敗）</h2>
+  <div class="row" id="clumsy">
+    <button data-clumsy="0" class="on">自然</button>
+    <button data-clumsy="1">不器用</button>
+    <button data-clumsy="2">不器用＋大げさ</button>
+  </div>
+  <h2>視点<kbd>1〜5</kbd></h2>
+  <div class="row" id="cams">
+    <button data-cam="face">顔の正面</button>
+    <button data-cam="profile">横顔</button>
+    <button data-cam="talk">会話の距離</button>
+    <button data-cam="full" class="on">全身</button>
+    <button data-cam="room">部屋</button>
+  </div>
+  <h2>照明</h2>
+  <div class="row" id="light"><button data-light="studio" class="on">確かめ用（安定）</button><button data-light="washitsu">和室</button></div>
+  <h2>人物（本人）</h2>
+  <select id="profile"></select>
+  <h2>画質</h2>
+  <div class="row" id="quality"><button data-q="high">きれい</button><button data-q="low">かるい</button></div>
+</div>
+<button id="toggle">パネル <kbd>P</kbd></button>
+<div id="gate" hidden><div>
+  <h1>人物の確認室</h1>
+  <p>合言葉を入れてください</p>
+  <input id="gateInput" type="text" inputmode="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="合言葉">
+  <p id="gateMsg">&nbsp;</p>
+  <button id="gateBtn">はいる</button>
+</div></div>
+<script src="src/gate.js"></script>
+<script type="module" src="src/lab/lab.js"></script>
+</body>
+</html>

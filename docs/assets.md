@@ -21,6 +21,7 @@
 | 玄関の土間（石） | `assets/tex/slate_floor_*` | Poly Haven「Slate Floor」 | CC0 | 見本候補 |
 | 座卓（木） | `assets/tex/oak_veneer_01_*` | Poly Haven「Oak Veneer 01」 | CC0 | 見本候補 |
 | 廊下の床 | `assets/tex/wood_floor_worn_*` | Poly Haven「Wood Floor Worn」 | CC0 | 見本候補 |
+| 人物の確認室の部屋・台・箱 | `src/lab/room.js`（質感は上の Poly Haven のものを使い回し）・箱は `src/props.js` | このリポジトリで書いた形 | 自作 | 仮素材 |
 | 座布団・布 | `assets/tex/rough_linen_*` | Poly Haven「Rough Linen」 | CC0 | 見本候補 |
 | 室内の環境光 | `assets/hdri/kiara_interior_1k.hdr` | Poly Haven「Kiara Interior」 | CC0 | 見本候補（1k は軽さ優先。完成見本では 2k 以上） |
 | 家の形・家具・小物（靴・手土産・湯のみ・盆・布巾） | `src/env.js`・`src/props.js` | このリポジトリで書いた形（箱や円柱の組み合わせ） | 自作 | 仮素材 |

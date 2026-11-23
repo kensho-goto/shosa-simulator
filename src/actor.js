@@ -153,7 +153,7 @@ export class Actor {
     this.headFrontLocal = B.Head.worldToLocal(hw.clone().add(new THREE.Vector3(0, 0, 0.2)));
     // 状態
     this.s = {
-      speed: 0, seated: 0, seatedTarget: 0, bow: 0, bowSeated: 0,
+      speed: 0, seated: 0, seatedTarget: 0, bow: 0, bowSeated: 0, grip: { L: 0, R: 0 }, keepLook: false,
       reach: { L: null, R: null }, reachW: { L: 0, R: 0 },
       look: null, lookW: 0, gesture: null, gt: 0, lean: 0, wobble: 0, headDown: 0,
       handsFront: 0, talking: false, smile: 0, worry: 0,
@@ -171,6 +171,12 @@ export class Actor {
   pitchAxis() { return UP.clone().cross(this.forward()).normalize(); }
   headPos() { return wpos(this.bones.Head); }
   handPos(side = 'R') { return wpos(this.bones[side === 'R' ? 'RightHand' : 'LeftHand']); }
+  // 手首を T に届かせるのに、腕があとどれだけ足りないか（m。正＝届かない）。いまの姿勢（前のコマ）で測る
+  armSlack(side, T) {
+    const L = side === 'R' ? 'Right' : 'Left', B = this.bones;
+    const S = wpos(B[L + 'Arm']), E = wpos(B[L + 'ForeArm']), Hd = wpos(B[L + 'Hand']);
+    return S.distanceTo(T) - (S.distanceTo(E) + E.distanceTo(Hd)) * 0.96;
+  }
   gesture(kind, dur = 1.2) { this.s.gesture = kind; this.s.gt = 0; this.s.gdur = dur; }
   lookAt(target, w = 1) { this.s.look = target; this.s.lookW = w; }
   reach(side, target, w = 1) { this.s.reach[side] = target; this.s.reachWTarget = this.s.reachWTarget || {}; this.s.reachWTarget[side] = target ? w : 0; }
@@ -191,7 +197,12 @@ export class Actor {
     const seat = ease(clamp01(s.seated));
     const ww = clamp01(s.speed / 1.0) * (1 - seat);
     this.walkW += (ww - this.walkW) * Math.min(1, dt * 8);
-    if (this.walkW > 0.01) this.phase += dt * Math.PI * 2 * (0.75 + Math.min(1.2, s.speed) * 0.75);
+    // 足の運び：速さに合う歩数と歩幅（足が床をすべらないように）
+    const sp = Math.max(0.15, Math.min(1.6, s.speed));
+    const cad = 0.55 + 0.3 * sp;                       // 1秒に何周（1周＝2歩）
+    const legLen = 0.5 * this.height;
+    this.stride = THREE.MathUtils.clamp(Math.asin(Math.min(0.9, (sp / (2 * cad)) / (2 * legLen))) * 1.15, 0.12, 0.5);
+    if (this.walkW > 0.01) this.phase += dt * Math.PI * 2 * cad;
     this.applyWalk(this.walkW);
     this.applySeiza(seat);
     // 脚の位置を覚えておく（上半身を動かしても脚は動かさない）
@@ -203,8 +214,9 @@ export class Actor {
       aim(B[g.L + 'Leg'], B[g.L + 'Foot'], g.foot.clone().sub(wpos(B[g.L + 'Leg'])));
       aim(B[g.L + 'Foot'], B[g.L + 'ToeBase'], g.toe.clone().sub(wpos(B[g.L + 'Foot'])));
     }
-    this.applyArms(seat);
+    // 首と背の向き（見る先）を先に決めてから腕を合わせる（あとで背を回すと、手が箱からずれる）
     this.applyHead(dt);
+    this.applyArms(seat);
     this.applyFace(dt);
   }
 
@@ -214,13 +226,13 @@ export class Actor {
     const B = this.bones, ax = this.pitchAxis(), ph = this.phase;
     for (const [L, sg] of [['Left', 1], ['Right', -1]]) {
       const sw = Math.sin(ph) * sg;
-      const thigh = -sw * 0.42 * w;
+      const thigh = -sw * (this.stride || 0.42) * w;
       const flex = Math.pow(clamp01(0.5 + 0.5 * Math.sin(ph * 1 + (sg > 0 ? 0 : Math.PI) + 2.0)), 2) * 0.95 * w;
       rotWorld(B[L + 'UpLeg'], ax, thigh);
       rotWorld(B[L + 'Leg'], ax, flex);
       rotWorld(B[L + 'Foot'], ax, -(thigh + flex) * 0.6);
     }
-    this.model.position.y = -(1 - Math.cos(ph * 2)) * 0.012 * w / this.model.scale.y;
+    this.model.position.y = -(1 - Math.cos(ph * 2)) * 0.012 * w; // model は root の子なので、root の単位（m）のまま
     rotWorld(B.Hips, UP, Math.sin(ph) * 0.06 * w);
   }
 
@@ -289,7 +301,7 @@ export class Actor {
       const { pos: def, hang } = this.defaultHand(L, sg, seat, deg);
       const tgt = target ? def.clone().lerp(target, wgt) : def;
       this.ik(L, sg, tgt, target ? hang * (1 - wgt) : hang);
-      this.curl(k, target ? 0.25 : 0.35);
+      this.curl(k, (target ? 0.22 : 0.35) + (s.grip ? s.grip[k] : 0) * 0.55 * wgt);
     }
   }
   hangHand(L, sg) {
@@ -359,7 +371,7 @@ export class Actor {
     let look = s.look, lw = s.lookW;
     if (!(look && lw > 0.01) && s.idleLook && s.idleLook !== this) { look = s.idleLook; lw = 0.7; }
     // お辞儀の間は目を伏せる（下げながら相手を見上げない）
-    lw *= THREE.MathUtils.clamp(1 - (s.bow - 8) / 18, 0, 1);
+    if (!s.keepLook) lw *= THREE.MathUtils.clamp(1 - (s.bow - 8) / 18, 0, 1);
     let tgt = null, wantYaw = 0, wantPitch = 0;
     if (look && lw > 0.01) {
       tgt = (look.isVector3 ? look : look.headPos ? look.headPos() : wpos(look));
@@ -372,6 +384,12 @@ export class Actor {
       const key = look.isVector3 ? null : look;
       if (key !== G.last && Math.abs(wantYaw - G.yaw) > 0.5 && this.blink <= 0) this.blink = 1;
       G.last = key;
+    }
+    // 何も見ていないとき：ときどき視線と頭をわずかに動かす（一点を見つめ続けない）
+    if (!tgt && s.idleGaze !== false && s.bow < 8 && s.seated < 0.5) {
+      G.idleT = (G.idleT ?? 0) - dt;
+      if (G.idleT <= 0) { G.idleYaw = (Math.random() - 0.5) * 0.35; G.idlePitch = -0.05 - Math.random() * 0.12; G.idleT = 2 + Math.random() * 3.5; if (Math.random() < 0.5 && this.blink <= 0) this.blink = 1; }
+      wantYaw = G.idleYaw || 0; wantPitch = G.idlePitch || 0; lw = Math.max(lw, 0.6);
     }
     // 頭は目より少し遅れて、なめらかについてくる
     const k = 1 - Math.exp(-dt * 5.5);
@@ -442,10 +460,12 @@ export class Actor {
     const jawT = s.talking ? (0.18 + 0.5 * Math.abs(Math.sin(this.t * 11.0) * Math.sin(this.t * 4.3 + 1))) : 0;
     F.jaw += (jawT - F.jaw) * Math.min(1, dt * 18);
     const lookDown = Math.min(0.5, Math.max(0, s.bow - 10) / 40);
+    // まぶたは少しだけ下ろしておく（全開だと見開いて見える）。下を見るほど下がる
+    const lid = 0.16 + Math.max(0, -(this.gaze ? this.gaze.pitch * this.gaze.w : 0)) * 0.45 + F.smile * 0.12;
     for (const m of this.faces) {
       const d = m.morphTargetDictionary, inf = m.morphTargetInfluences;
       const set = (k, v) => { if (d[k] != null) inf[d[k]] = v; };
-      set('AK_09_EyeBlinkLeft', Math.max(bl, lookDown)); set('AK_10_EyeBlinkRight', Math.max(bl, lookDown));
+      set('AK_09_EyeBlinkLeft', Math.max(bl, lookDown, lid)); set('AK_10_EyeBlinkRight', Math.max(bl, lookDown, lid));
       set('AK_25_JawOpen', F.jaw * 0.55);
       set('AK_44_MouthSmileLeft', F.smile * 0.6); set('AK_45_MouthSmileRight', F.smile * 0.6);
       set('AK_03_BrowInnerUp', F.worry * 0.7);

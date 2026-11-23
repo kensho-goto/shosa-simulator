@@ -9,6 +9,11 @@
 - 音・家具・お辞儀や正座の動きは、まだ **仮の素材** です。完成見本の段階ではありません（`docs/assets.md`）。
 - **人による試遊はまだしていません。** 通しで確かめたのは、自動で操作する台本（パソコン用 `tools/play-bot.mjs`・スマホ用 `tools/play-bot-touch.mjs`）だけです（`docs/status.md`）。
 
+## 人物の確認室
+
+人物ひとり（と相手役）を、和室と手土産の箱で実際に動かして確かめる場所です。待機・見る・歩く・止まる・お辞儀・箱を持つ・置く・渡す・最初に戻す、を操作パネルとキーで動かせます。
+開き方・操作・確かめた結果は [`docs/lab.md`](docs/lab.md)。手元では http://127.0.0.1:8150/lab.html 、公開ページは https://kensho-goto.github.io/shosa-simulator/lab.html 。
+
 ## スマホ・ほかの人に遊んでもらう
 
 公開ページ：https://kensho-goto.github.io/shosa-simulator/ （合言葉：いいんじゃ）
@@ -78,6 +83,9 @@ node tools/play-bot.mjs docs/screenshots
 
 # 同じことを、スマホの画面（844×390）と指の操作だけで行う
 node tools/play-bot-touch.mjs docs/screenshots-phone
+
+# 人物の確認室を、パネルのボタンだけで動かして確かめる（画面写真と結果を docs/lab に残す）
+node tools/lab-bot.mjs docs/lab
 ```
 
 `play-bot.mjs` は `~/.dev-browser/node_modules` の Playwright と、インストール済みの Chrome を使います。
