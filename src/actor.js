@@ -12,6 +12,9 @@ export const PEOPLE = {
   Male_Adult_03: { code: 'm004' },      // 父
   Business_Female_03: { code: 'f016' }, // 母
 };
+// 実在の人を写真から3Dにした人物（スキャン・CC BY。作者名の表示が要る）。顔の表情は動かない
+export const SCANS = {};
+export function addScan(name, file) { SCANS[name] = { file }; }
 const BONE = {
   Root: 'Bip01', Hips: 'Bip01_Pelvis', Spine: 'Bip01_Spine', Spine1: 'Bip01_Spine1', Spine2: 'Bip01_Spine2', Neck: 'Bip01_Neck', Head: 'Bip01_Head',
   LEye: 'Bip01_LEye', REye: 'Bip01_REye',
@@ -24,6 +27,31 @@ for (const [L, c] of [['Left', 'L'], ['Right', 'R']]) {
   });
 }
 const FINGERS = ['Finger1', 'Finger2', 'Finger3', 'Finger4'];
+// Mixamo の骨（スキャン人物はこちら）。名前の頭の「mixamorig」は外して比べる
+const MIXAMO = {
+  Root: 'Hips', Hips: 'Hips', Spine: 'Spine', Spine1: 'Spine1', Spine2: 'Spine2', Neck: 'Neck', Head: 'Head', LEye: 'LeftEye', REye: 'RightEye',
+};
+for (const L of ['Left', 'Right']) for (const k of ['UpLeg', 'Leg', 'Foot', 'ToeBase', 'Shoulder', 'Arm', 'ForeArm', 'Hand', 'HandMiddle1']) MIXAMO[L + k] = L + k;
+const mixKey = n => n.replace(/^.*?mixamorig\d*[:_]?/, '');
+function boneTable(model) {
+  const all = {}, mix = {};
+  model.traverse(o => { if (o.isBone || /^Bip01/.test(o.name)) { all[o.name] = o; if (/mixamorig/.test(o.name)) mix[mixKey(o.name)] = o; } });
+  const isMix = !all.Bip01 && mix.Hips;
+  const B = {};
+  for (const [k, n] of Object.entries(isMix ? MIXAMO : BONE)) B[k] = isMix ? mix[n] : all[n];
+  const fingers = { L: [], R: [] }, thumbs = { L: [], R: [] };
+  for (const c of ['L', 'R']) {
+    if (isMix) {
+      const L = c === 'L' ? 'Left' : 'Right';
+      fingers[c] = ['Index', 'Middle', 'Ring', 'Pinky'].map(f => [1, 2, 3].map(i => mix[`${L}Hand${f}${i}`]).filter(Boolean));
+      thumbs[c] = [1, 2, 3].map(i => mix[`${L}HandThumb${i}`]).filter(Boolean);
+    } else {
+      fingers[c] = FINGERS.map(f => [all[`Bip01_${c}_${f}`], all[`Bip01_${c}_${f}1`], all[`Bip01_${c}_${f}2`]].filter(Boolean));
+      thumbs[c] = [all[`Bip01_${c}_Finger0`], all[`Bip01_${c}_Finger01`], all[`Bip01_${c}_Finger02`]].filter(Boolean);
+    }
+  }
+  return { B, fingers, thumbs, isMix };
+}
 
 const loader = new GLTFLoader();
 const texLoader = new THREE.TextureLoader();
@@ -54,6 +82,25 @@ function skin(mat, amount) {
   mat.customProgramCacheKey = () => 'skin' + amount;
   return mat;
 }
+async function loadScan(n) {
+  const gltf = await loader.loadAsync(SCANS[n].file);
+  gltf.scene.traverse(o => {
+    if (!o.isMesh) return;
+    const conv = m => {
+      const st = new THREE.MeshStandardMaterial({ name: 'scan', map: m.map || null, normalMap: m.normalMap || null, roughness: 0.78, metalness: 0 });
+      if (st.map) st.map.colorSpace = THREE.SRGBColorSpace;
+      if (m.transparent || m.alphaTest) { st.alphaTest = 0.5; st.side = THREE.DoubleSide; }
+      return skin(st, 0.7);
+    };
+    o.material = Array.isArray(o.material) ? o.material.map(conv) : conv(o.material);
+  });
+  // 落としたときの動き（歩くなど）は使わない。手足は計算で動かす
+  gltf.scene.updateMatrixWorld(true);
+  const box = new THREE.Box3().setFromObject(gltf.scene);
+  cache[n] = { gltf, tall: box.max.y - box.min.y, scan: true };
+  cache[n + ':mats'] = {};
+}
+export async function loadScans(names) { await Promise.all(names.filter(n => !cache[n]).map(loadScan)); }
 export async function loadModels(onProgress, { hi = true } = {}) {
   let done = 0; const names = Object.keys(PEOPLE);
   await Promise.all(names.map(async n => {
@@ -145,7 +192,7 @@ export class Actor {
     });
     // 髪のふち（半透明）を、同じ骨で動く2枚目として重ねる
     const mats = cache[person + ':mats'];
-    const hairMeshes = []; this.model.traverse(o => { if (o.isSkinnedMesh && [].concat(o.material).includes(mats.hair)) hairMeshes.push(o); });
+    const hairMeshes = []; if (mats.hair) this.model.traverse(o => { if (o.isSkinnedMesh && [].concat(o.material).includes(mats.hair)) hairMeshes.push(o); });
     const hide = new THREE.MeshBasicMaterial({ visible: false });
     for (const o of hairMeshes) {
       const ms = Array.isArray(o.material) ? o.material.map(m => m === mats.hair ? mats.hairEdge : hide) : mats.hairEdge;
@@ -157,13 +204,10 @@ export class Actor {
     }
     this.root.updateMatrixWorld(true);
     // 骨
-    const all = {}; this.model.traverse(o => { if (o.isBone || /^Bip01/.test(o.name)) all[o.name] = o; });
-    const B = this.bones = {};
-    for (const [k, n] of Object.entries(BONE)) B[k] = all[n];
-    this.fingers = { L: [], R: [] };
-    // 指の骨の名前（Finger1, Finger11, Finger12）
-    for (const c of ['L', 'R']) this.fingers[c] = FINGERS.map(f => [all[`Bip01_${c}_${f}`], all[`Bip01_${c}_${f}1`], all[`Bip01_${c}_${f}2`]].filter(Boolean));
-    this.thumbs = { L: [all.Bip01_L_Finger0, all.Bip01_L_Finger01, all.Bip01_L_Finger02].filter(Boolean), R: [all.Bip01_R_Finger0, all.Bip01_R_Finger01, all.Bip01_R_Finger02].filter(Boolean) };
+    // 骨（Rocketbox の Bip01 と、スキャン人物の Mixamo の両方を読む）
+    const bt = boneTable(this.model);
+    const B = this.bones = bt.B;
+    this.fingers = bt.fingers; this.thumbs = bt.thumbs; this.isScan = !!src.scan;
     // 元の姿勢（毎フレームここから組み直す）
     this.rest = [];
     this.model.traverse(o => { if (o.isBone || o.name === 'Bip01') this.rest.push([o, o.quaternion.clone(), o.position.clone()]); });
