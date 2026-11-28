@@ -37,6 +37,10 @@ export class Sound {
       case 'door': burst(0.7, 'lowpass', 900, 0.7, 0.2, 0.05); tone(160, 'triangle', 0.02, 0.05, 0.4); break;
       case 'chime': tone(1046, 'sine', 0.005, 0.12, 1.2); setTimeout(() => this.play('chimeLo', k), 380); break;
       case 'chimeLo': tone(784, 'sine', 0.005, 0.12, 1.4); break;
+      case 'best': tone(784, 'triangle', 0.005, 0.1, 0.25); setTimeout(() => this.play('best2', k), 90); break;   // 見事
+      case 'best2': tone(1175, 'triangle', 0.005, 0.1, 0.5); tone(1568, 'sine', 0.01, 0.05, 0.6); break;
+      case 'boing': tone(330, 'sine', 0.005, 0.18, 0.5, 90); tone(500, 'triangle', 0.005, 0.05, 0.3, 180); break; // 珍事
+      case 'whoosh': burst(0.3, 'bandpass', 1800, 1.2, 0.1, 0.06); break;
       case 'tick': tone(3000, 'square', 0.001, 0.03, 0.03); break;                          // 時計
     }
   }

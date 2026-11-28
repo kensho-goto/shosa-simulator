@@ -3,7 +3,7 @@
 // 日本全国で同じ唯一の正解ではない。誇張はゲーム用の演出。
 import * as THREE from 'three';
 import { GENKAN, ROOM } from './env.js';
-import { bow, hand, choose, walk, posture } from './ops.js';
+import { bow, hand, choose, walk, posture, tap, charge, mash, judge } from './ops.js';
 import { makeStain } from './props.js';
 
 const G = GENKAN.y;
@@ -39,6 +39,8 @@ export const FINDS = {
   numbSink: { name: 'しびれて戻る', desc: '立ちかけて、すとんと座り直した。' },
   numbStagger: { name: 'しびれ千鳥足', desc: 'しびれたまま歩きだして、よろけた。' },
   backTurn: { name: '閉まる前に背を向ける', desc: 'まだお辞儀をしている二人に、背中を向けた。' },
+  kneeSlide: { name: 'ひざすべり', desc: 'ひざで進みすぎて、机にごつん。' },
+  quickDraw: { name: '早押しの名人', desc: '質問が来た瞬間、湯のみを置いた。' },
   perfect: { name: '非の打ちどころがない', desc: 'すべての所作を、ほぼ完ぺきにこなした。' },
 };
 
@@ -93,7 +95,7 @@ export const STEPS = {
   A1: {
     setup(ctx) {
       const { player, partner, mother, father } = ctx.actors;
-      ctx.place(player, -0.15, G, -0.85, 0, 0);
+      ctx.place(player, -0.15, G, ctx.easy ? -0.5 : -0.85, 0, 0);
       ctx.place(partner, 0.32, G, -0.95, 0, 0);
       ctx.place(mother, 0.08, 0, 0.5, PI, 0);
       ctx.place(father, SEAT.father.x, CUSHION_Y, SEAT.father.z, PI, 1);
@@ -109,8 +111,9 @@ export const STEPS = {
       await ctx.talk('mother', 'いらっしゃい。遠いところ、よく来てくれたわね。', 2.6);
       ctx.objective('お母さんに<em>お辞儀</em>であいさつする<br><small>相手が頭を下げはじめたら合わせる</small>');
       // 少しだけ前に出られる（近づきすぎると…）
+      if (ctx.easy) ctx.objective('お母さんに<em>お辞儀</em>であいさつする<br><small>押している間さがる。金色ではなす。深すぎると……</small>');
       const stopMove = ctx.every(dt => {
-        const m = ctx.input.move; if (!m.y) return;
+        const m = ctx.input.move; if (!m.y || ctx.easy) return;
         player.pos.z = THREE.MathUtils.clamp(player.pos.z + m.y * 0.5 * dt, -1.1, -0.12);
         player.s.speed = 0.4;
       });
@@ -161,6 +164,7 @@ export const STEPS = {
       const { shoeL, shoeR, pshoeL, pshoeR } = ctx.props;
       partner.lookAt(player);
       await ctx.talk('partner', '（靴、そろえてね。つま先は戸のほうに。私のと同じように）', 3.2);
+      if (ctx.easy) return easyShoes(ctx);
       ctx.objective('脱いだ靴を<em>そろえる</em><br><small>つま先を戸のほうへ・左右をならべて・真ん中をあけて端に</small>');
       player.lookAt(new THREE.Vector3(-0.15, G, -0.35));
       let t = 0, okT = 0, said25 = false, flew = false, gaveUp = false;
@@ -247,6 +251,7 @@ export const STEPS = {
       father.lookAt(player); mother.lookAt(player);
       await ctx.talk('father', 'おお、いらっしゃい。どうぞ、入って。', 2.2);
       await ctx.talk('partner', '（敷居と、畳のふちは、踏まないでね）', 2.6);
+      if (ctx.easy) return easyEnter(ctx);
       ctx.objective('部屋に入り、<em>自分の座布団の手前</em>まで進む<br><small>敷居と畳の縁はふまない・座布団もふまない</small>');
       const marker = ctx.marker(SEAT.playerFront.x, SEAT.playerFront.z);
       let heri = 0, thr = 0, cush = 0, firstHeri = true;
@@ -350,10 +355,11 @@ export const STEPS = {
       const { gift, bag } = ctx.props;
       father.lookAt(player); mother.lookAt(player);
       await ctx.talk('father', 'さあ、座布団をあててください。', 2.0);
-      ctx.objective('<em>膝で進んで</em>座布団に座る<br><small>立って座布団をふまない</small>');
+      ctx.objective(ctx.easy ? '<em>ひざで進んで</em>座布団に座る<br><small>押している間 進む。座布団の上ではなす</small>' : '<em>膝で進んで</em>座布団に座る<br><small>立って座布団をふまない</small>');
       // 膝で進む（W）／立って歩く（F）
-      let cushStep = false, stood = false, hops = 0;
-      await new Promise((resolve, reject) => {
+      let cushStep = false, stood = false, hops = 0, easyCush = null;
+      if (ctx.easy) easyCush = await easyCushion(ctx);
+      else await new Promise((resolve, reject) => {
         let hop = 0, from = 0;
         ctx.hud.keys([['W', '膝で前へ進む'], ['f', '立ち上がる']]);
         const stop = ctx.every(dt => {
@@ -382,7 +388,7 @@ export const STEPS = {
         await posture(ctx, { to: 1 });
       });
       player.s.bow = 0;
-      const cushionScore = stood ? (cushStep ? 0.2 : 0.6) : 1;
+      const cushionScore = easyCush != null ? easyCush : stood ? (cushStep ? 0.2 : 0.6) : 1;
       // ---- 手土産 ----
       await ctx.talk('partner', '（手土産、のしの文字がお父さんから読める向きでね）', 2.8);
       ctx.objective('手土産を紙袋から出し、<em>文字が相手に読める向き</em>で両手で渡す<br><small>お父さんの手のところで離す</small>');
@@ -399,6 +405,7 @@ export const STEPS = {
         } else { father.reach('L', null); father.reach('R', null); }
         player.s.lean = gift.held ? clamp01((gift.pos.z - 3.1) * 0.8) * 0.5 : player.s.lean * 0.9;
       });
+      if (ctx.easy) ({ handed, placed, dropped, line, hovered } = await easyGift(ctx, lines));
       while (!handed && !giveUp) {
         const r = await hand(ctx, {
           props: [gift], planeY: (p, st) => (st.t < 0.5 ? 0.3 + st.t * 0.26 : 0.43), bounds: { x0: -1.0, x1: 0.3, z0: 2.5, z1: 4.05 },
@@ -497,7 +504,7 @@ export const STEPS = {
         if (!S.stain) S.stain = ctx.addStain(cup.pos.x, onTable ? TABLE_Y + 0.002 : 0.003, Math.max(cup.pos.z, onTable ? 3.32 : 3.2));
         S.stain.scale.setScalar(Math.min(0.16, 0.02 + S.spilled * 0.5));
       };
-      const r = await hand(ctx, {
+      const r = ctx.easy ? await easyTea(ctx, S, { cup, saucer, mouth, spillAt, qList }) : await hand(ctx, {
         props: [cup], planeY: TABLE_Y + 0.05, tilt: true, rotate: false, tremor: 0.0035, stiff: 90, damp: 0.85, handOffset: new THREE.Vector3(0, 0.04, -0.03),
         keys: [['mouse', '押している間 持つ（はなすと置く）'], ['マウス上下', '口元へ'], ['wheel', '傾ける（Z / X でも）']],
         goal: (g, p, st) => {
@@ -584,7 +591,7 @@ export const STEPS = {
         father.lookAt(player);
         if (c.index === 1) {
           await ctx.talk('player', 'す、すみません！', 1.2);
-          await wipe(ctx, S);
+          await (ctx.easy ? easyWipe(ctx, S) : wipe(ctx, S));
           ctx.story.addCare('A6', 1.5, 'wiped');
         } else if (c.index === 2) {
           await ctx.talk('player', 'すみません……。', 1.4);
@@ -625,9 +632,11 @@ export const STEPS = {
       const script = [[0.6, '……', 1.6], [2.6, '今日は、わざわざ遠いところを、ありがとう。', 2.6], [7.0, '……まあ、なんだ。', 1.6], [10.4, '美咲から、話があるとは聞いてるんだけどね。', 2.8]];
       const OPEN = 13.6;
       let tickT = 0, helped = false, si = 0, speaking = false, speakEnd = 0;
+      if (ctx.easy) ctx.objective('お父さんの話が<em>終わってから</em>、言葉を押す<br><small>ゲージの金色が「話の切れ目」。早いと食い気味、遅いと沈黙</small>');
       const c = await choose(ctx, {
         list, extraKeys: [['', '待つ＝何も押さない']],
         onFrame: (dt, t) => {
+          if (ctx.easy) ctx.hud.gauge(true, { value: t / 24, good: [OPEN / 24, (OPEN + 4.5) / 24], best: [(OPEN + 0.4) / 24, (OPEN + 2.6) / 24], danger: [(OPEN + 8.5) / 24, 1], cap: '話の切れ目' });
           while (si < script.length && t >= script[si][0]) { const [, txt, d] = script[si]; ctx.say('father', txt, d); speaking = true; speakEnd = script[si][0] + d; si++; }
           if (speaking && t >= speakEnd) speaking = false;
           if (t > 12.6 && !father._looked) { father._looked = true; father.lookAt(player); }
@@ -640,7 +649,7 @@ export const STEPS = {
           return false;
         },
       });
-      father._looked = false;
+      father._looked = false; ctx.hud.gauge(false);
       const t = c.t;
       let timing = 1, interrupted = false;
       if (t < OPEN) {
@@ -653,6 +662,7 @@ export const STEPS = {
         const w = t - OPEN;
         timing = w < 4.5 ? 1 : Math.max(0.3, 1 - (w - 4.5) / 8);
       }
+      if (ctx.easy && !(interrupted && timing < 0.5)) judge(ctx, timing > 0.95 && t - OPEN < 2.6 ? 'best' : timing > 0.8 ? 'good' : 'bad');
       ctx.rig.goalFov = 34;
       if (interrupted) { await ctx.talk('father', '……ん？ ああ、いや……聞こう。', 2.0); }
       const said = list[c.index - 1].text.replace(/[「」]/g, '');
@@ -684,19 +694,19 @@ export const STEPS = {
       father.lookAt(player); mother.lookAt(player);
       ctx.aside('――それから、一時間。足が、しびれている。', 2.6); await ctx.wait(2.8);
       await ctx.talk('father', '今日は、ありがとう。気をつけて帰りなさい。', 2.4);
-      ctx.objective('<em>ゆっくり</em>立ち上がる<br><small>しびれているので、途中ではなすと戻ってしまう</small>');
+      ctx.objective(ctx.easy ? '<em>くり返し押して</em>立ち上がる<br><small>しびれているので、手を止めると戻ってしまう</small>' : '<em>ゆっくり</em>立ち上がる<br><small>しびれているので、途中ではなすと戻ってしまう</small>');
       const numb = 0.85;
       let sank = false;
       await posture(ctx, { to: 0, numb, onSink: () => { sank = true; ctx.find('numbSink'); ctx.aside('（すとん）', 1); ctx.sfx.play('thud', 0.3); } });
       // しびれが引くまで待つ
-      ctx.objective('しびれが引くまで、少し<em>待つ</em><br><small>すぐ歩くと、よろける</small>');
+      ctx.objective('しびれが引くまで、少し<em>待つ</em><br><small>' + (ctx.easy ? '押すと、よろける' : 'すぐ歩くと、よろける') + '</small>');
       ctx.hud.keys([['', 'その場で待つ']]);
       let n = 1, stag = false;
       await ctx.until(dt => {
         n -= dt / 2.6; player.s.wobble = n * 0.9;
         ctx.hud.meter(true, { value: n, zone: null, cap: 'しびれ' });
         const m = ctx.input.move;
-        if ((m.x || m.y) && n > 0.15 && !stag) { stag = true; ctx.find('numbStagger'); player.s.lean = -0.3; ctx.sfx.play('thud', 0.5); ctx.rig.shake = 0.02; ctx.story.moodAdd(-2); partner.gesture('flinch'); }
+        if ((m.x || m.y || (ctx.easy && ctx.input.actHit)) && n > 0.15 && !stag) { stag = true; ctx.find('numbStagger'); player.s.lean = -0.3; ctx.sfx.play('thud', 0.5); ctx.rig.shake = 0.02; ctx.story.moodAdd(-2); partner.gesture('flinch'); }
         if (stag) player.s.lean *= 0.95;
         return n <= 0;
       });
@@ -719,6 +729,9 @@ export const STEPS = {
       let turned = false, nod = false;
       // 家の中（見送る両親の肩ごし）から戸口を見る。W で外へ向かう。
       ctx.shot([0.62, 1.75, 0.95], [-0.1, 0.8, -1.2], { fov: 50, speed: 3 });
+      if (ctx.easy) {
+        ({ turned, nod } = await easyLeave(ctx));
+      } else {
       const pw = ctx.walkTo(partner, 0.3, -1.4, 0.7, 0.5);
       await walk(ctx, {
         speed: 0.75, extraKeys: [['space', 'ふり返って会釈']],
@@ -736,6 +749,7 @@ export const STEPS = {
         else player.s.bow = Math.max(0, player.s.bow - 60 * dt);
         return tt > 3.2 && player.s.bow < 1;
       });
+      }
       if (nod) ctx.story.addCare('A8', 1, 'lastNod');
       ctx.sfx.play('door');
       ctx.story.setTech('A8', 0.4 * standScore + 0.6 * b.score - (turned ? 0.1 : 0));
@@ -785,4 +799,335 @@ async function wipe(ctx, S) {
   ctx.removeStain(S.stain); S.stain = null;
   cloth.obj.visible = false;
   ctx.shot([-1.05, 1.35, 2.15], [-0.15, 0.62, 3.9], { fov: 44, speed: 2.5 });
+}
+
+// ================= かんたん操作（押すだけ）の各所 =================
+const V3 = (x, y, z) => new THREE.Vector3(x, y, z);
+async function fall(ctx, p, sec = 3) {
+  let t = 0;
+  await ctx.until(dt => { t += dt; if (p.step(dt)) ctx.sfx.play('thud', 0.7); return !p.free || t > sec; });
+  p.free = false;
+}
+
+// A2 靴：手の中で回る靴を、つま先が戸のほうを向いた瞬間に置く（2足）
+async function easyShoes(ctx) {
+  const { player, partner, mother } = ctx.actors;
+  const { shoeL, shoeR } = ctx.props;
+  ctx.objective('靴の<em>つま先が戸のほう</em>を向いた瞬間に押す<br><small>2足とも。金色が真正面</small>');
+  player.lookAt(V3(-0.2, G, -0.3));
+  let score = 0, flew = false, backward = 0, bad = 0;
+  const spots = [[shoeL, -0.42], [shoeR, -0.3]];
+  for (let i = 0; i < 2; i++) {
+    const [sh, x] = spots[i];
+    const hold = V3(-0.22 + i * 0.04, G + 0.36, -0.28);
+    const from = sh.pos.clone(), r0 = sh.obj.rotation.clone();
+    ctx.sfx.play('rustle', 0.4);
+    await ctx.tween(0.35, u => { sh.pos.lerpVectors(from, hold, u); sh.obj.rotation.set(r0.x * (1 - u), r0.y, r0.z * (1 - u)); });
+    player.reach('R', hold.clone().add(V3(0.05, 0.05, 0)), 1); player.reach('L', hold.clone().add(V3(-0.05, 0.05, 0)), 1);
+    let yaw = PI;
+    const r = await tap(ctx, {
+      cap: `${i + 1}足目　つま先を戸のほうへ`, key: '押す＝この向きで置く', speed: 0.36 + i * 0.12, phase: 0.2 + i * 0.5,
+      good: [0.4, 0.6], best: [0.46, 0.54], timeout: 7, stamp: false,
+      onValue: (v, t) => { yaw = PI + (v - 0.5) * 2 * PI; sh.obj.rotation.set(0, yaw, 0); sh.pos.copy(hold); sh.pos.y += Math.sin(t * 9) * 0.004; },
+    });
+    player.reach('R', null); player.reach('L', null);
+    if (r.grade === 'none') {
+      // 迷っているうちに、手から靴がすべる
+      flew = true; bad++;
+      ctx.find('shoeFly'); mother.gesture('flinch'); ctx.story.moodAdd(-3);
+      sh.drop(V3(0.5, 1.6, -0.9)); await fall(ctx, sh);
+      continue;
+    }
+    const err = Math.abs(Math.atan2(Math.sin(yaw - PI), Math.cos(yaw - PI)));
+    if (err > 2.4) backward++;
+    if (r.grade === 'bad') bad++;
+    score += r.grade === 'best' ? 0.5 : r.grade === 'good' ? 0.42 : Math.max(0.05, 0.3 - err * 0.1);
+    if (err > 2.4) judge(ctx, 'funny', '逆向き'); else judge(ctx, r.grade);
+    const to = V3(x, G, -0.22), p0 = sh.pos.clone();
+    await ctx.tween(0.3, u => { sh.pos.lerpVectors(p0, to, u); sh.pos.y += Math.sin(u * PI) * 0.05; });
+    ctx.sfx.play('set', 0.6);
+  }
+  let care = 0;
+  if (bad) {
+    if (backward) ctx.find('shoeBackward');
+    mother.lookAt(shoeL.obj);
+    await ctx.wait(0.5);
+    ctx.aside('（お母さんが、そっと靴を直してくれた……）', 2.4);
+    ctx.find('motherShoes');
+    neatShoes(ctx); ctx.sfx.play('set', 0.5);
+    await ctx.wait(1.0);
+    const c = await choose(ctx, { list: [{ text: '「あっ、すみません。ありがとうございます」' }, { text: '（気づかなかったふりをする）' }], timer: 6 });
+    if (c.index === 1) { await ctx.talk('player', 'あっ、すみません。ありがとうございます。', 2.0); mother.gesture('nod'); await ctx.talk('mother', 'いいのよ。', 1.2); care = 1; }
+    else { care = -1; ctx.story.moodAdd(-3); }
+  } else { partner.gesture('nod'); ctx.story.moodAdd(2); }
+  if (flew) score -= 0.2;
+  ctx.story.setTech('A2', clamp01(score));
+  ctx.story.addCare('A2', care, 'shoes');
+  player.lookAt(null, 0); player.s.bow = 0;
+}
+
+// A3 和室へ：歩くのは自動。敷居と畳のふちの手前で押すと、またぐ
+async function easyEnter(ctx) {
+  const { player, partner, father, mother } = ctx.actors;
+  const H = ctx.house;
+  ctx.objective('<em>敷居</em>と<em>畳のふち</em>の手前で押して、またぐ<br><small>歩くのは自動。金色で押す</small>');
+  const pts = [player.pos.clone().setY(0), V3(-0.1, 0, 2.3), V3(SEAT.playerFront.x, 0, SEAT.playerFront.z)];
+  const seg = []; let total = 0;
+  for (let i = 1; i < pts.length; i++) { const L = pts[i].distanceTo(pts[i - 1]); seg.push([pts[i - 1], pts[i], total, L]); total += L; }
+  const at = s => { for (const [a, b, s0, L] of seg) if (s <= s0 + L) return a.clone().lerp(b, (s - s0) / L); return pts[pts.length - 1].clone(); };
+  // 足元の危ないところ（敷居・畳のふち）を道の上で探す
+  const haz = []; let inside = null;
+  for (let s = 0.2; s < total; s += 0.01) {
+    const p = at(s);
+    const thr = Math.abs(p.z - ROOM.z0) < 0.03 && Math.abs(p.x) < 0.88;
+    const heri = !thr && H.heriRects.some(r => inRect(p, r, 0.01));
+    const kind = thr ? 'thr' : heri ? 'heri' : null;
+    if (kind && !inside) inside = { kind, s0: s };
+    if (!kind && inside) {
+      const h = { kind: inside.kind, s: (inside.s0 + s) / 2 }, prev = haz[haz.length - 1];
+      if (prev && h.s - prev.s < 0.28) { if (h.kind === 'thr') prev.kind = 'thr'; } else haz.push(h);
+      inside = null;
+    }
+  }
+  const pwalk = ctx.walkTo(partner, 0.42, SEAT.partnerFront.z, 0.7, 1.2);
+  let s = 0, hop = 0, hopFrom = 0, hopTo = 0, stepAcc = 0, hi = 0, heri = 0, thr = 0, good = 0, tried = false;
+  const speed = 0.62, WIN = 0.9;
+  ctx.hud.keys([['act', '押す＝またぐ']]);
+  await ctx.until(dt => {
+    const h = haz[hi];
+    if (hop > 0) {
+      hop = Math.max(0, hop - dt / 0.42); const u = 1 - hop;
+      s = hopFrom + (hopTo - hopFrom) * u; player.pos.y = Math.sin(u * PI) * 0.07;
+      if (hop === 0) { player.pos.y = 0; ctx.sfx.play('step', 0.7); }
+    } else {
+      s = Math.min(total, s + speed * dt);
+      stepAcc += speed * dt; if (stepAcc > 0.36) { stepAcc = 0; ctx.sfx.play('step', 0.5); }
+    }
+    const p = at(s), q = at(Math.min(total, s + 0.05));
+    player.pos.x = p.x; player.pos.z = p.z;
+    if (q.distanceTo(p) > 1e-4) player.yaw = Math.atan2(q.x - p.x, q.z - p.z);
+    player.s.speed = s < total ? speed : 0;
+    if (h) {
+      const d = h.s - s, v = clamp01(1 - d / WIN);
+      ctx.hud.gauge(d < WIN + 0.3, { value: v, good: [0.7, 0.94], best: [0.79, 0.9], cap: h.kind === 'thr' ? '敷居をまたぐ' : '畳のふちをまたぐ' });
+      if (hop === 0 && !tried && d < WIN && ctx.input.actHit) {
+        tried = true;
+        const g = v >= 0.79 && v <= 0.9 ? 'best' : v >= 0.7 && v <= 0.94 ? 'good' : 'bad';
+        if (g !== 'bad') { hop = 1; hopFrom = s; hopTo = h.s + 0.2; good++; judge(ctx, g); while (haz[hi] && haz[hi].s <= hopTo + 0.05) hi++; tried = false; ctx.sfx.play('whoosh', 0.5); }
+        else judge(ctx, 'bad', '早い');
+      }
+      if (hop === 0 && s >= h.s) {
+        // ふんでしまった
+        if (h.kind === 'thr') { thr++; ctx.sfx.play('creak'); father.gesture('tilt'); ctx.story.moodAdd(-3); ctx.find('threshold'); }
+        else { heri++; ctx.story.moodAdd(-0.8); if (heri === 1) { partner.gesture('lookdown', 0.8); ctx.aside('（あっ、ふちを……）', 1.4); } if (heri === 4) ctx.find('heri'); }
+        hi++; tried = false;
+      }
+    } else ctx.hud.gauge(false);
+    return s >= total && hop === 0;
+  });
+  ctx.hud.gauge(false); player.s.speed = 0;
+  player.turnTo(SEAT.father.x, SEAT.father.z);
+  await pwalk;
+  const score = clamp01(1 - 0.15 * heri - 0.35 * thr);
+  ctx.story.setTech('A3', score);
+  if (score > 0.95) ctx.story.moodAdd(2);
+}
+
+// A5 座布団：押している間ひざで進む。座布団の上ではなす
+async function easyCushion(ctx) {
+  const { player, father, mother } = ctx.actors;
+  const z0 = SEAT.playerFront.z, span = 0.63;
+  const vSeat = (SEAT.player.z - z0) / span;
+  let t = 0;
+  const r = await charge(ctx, {
+    cap: 'ひざで進む', key: '押している間 ひざで進む（座布団の上ではなす）', rate: 0.36,
+    good: [vSeat - 0.08, vSeat + 0.08], best: [vSeat - 0.03, vSeat + 0.03], danger: [0.86, 1], keep: true, stamp: false,
+    onValue: (v, held) => {
+      t += held ? 0.016 : 0;
+      player.pos.z = z0 + v * span;
+      player.s.bow = held ? Math.abs(Math.sin(t * 9)) * 10 : player.s.bow * 0.9;
+      player.pos.y = CUSHION_Y * clamp01(1 - Math.abs(player.pos.z - SEAT.player.z) / 0.3) * clamp01((player.pos.z - 2.6) / 0.08);
+      if (held && Math.random() < 0.03) ctx.sfx.play('rustle', 0.3);
+    },
+  });
+  player.s.bow = 0;
+  let sc = 1;
+  if (r.grade === 'over') {
+    ctx.find('kneeSlide'); ctx.sfx.play('bonk'); ctx.rig.shake = 0.03; father.gesture('flinch'); mother.gesture('flinch'); player.gesture('flinch', 0.8); ctx.story.moodAdd(-3);
+    await ctx.wait(0.6); sc = 0.4;
+  } else {
+    judge(ctx, r.grade);
+    sc = r.grade === 'best' ? 1 : r.grade === 'good' ? 0.85 : 0.5;
+  }
+  // 座布団の真ん中へ寄せる
+  const zA = player.pos.z;
+  await ctx.tween(0.4, u => { player.pos.z = THREE.MathUtils.lerp(zA, SEAT.player.z, u); player.pos.y = CUSHION_Y * u + player.pos.y * (1 - u); });
+  player.pos.set(SEAT.player.x, CUSHION_Y, SEAT.player.z); player.yaw = 0;
+  return sc;
+}
+
+// A5 手土産：回る箱を、のしが相手に読める向きで止める → ひとこと → 押している間 差し出す
+async function easyGift(ctx, lines) {
+  const { player, father, mother } = ctx.actors;
+  const { gift, bag } = ctx.props;
+  const out = { handed: false, placed: false, dropped: 0, line: 0, hovered: false };
+  ctx.objective('箱が回る。<em>のしの文字がお父さんに読める向き</em>で押す');
+  const hold = V3(SEAT.player.x, 0.42, 3.1);
+  const from = gift.pos.clone();
+  ctx.sfx.play('rustle', 0.5);
+  await ctx.tween(0.5, u => { gift.pos.lerpVectors(from, hold, u); gift.obj.rotation.set((PI / 2.6) * (1 - u), PI, 0); });
+  const hands = () => { player.reach('R', gift.pos.clone().add(V3(-0.13, 0.02, 0)), 1); player.reach('L', gift.pos.clone().add(V3(0.13, 0.02, 0)), 1); };
+  const stopHands = ctx.every(hands);
+  const r = await tap(ctx, {
+    cap: 'のしを、お父さんへ向ける', key: '押す＝この向きで止める', speed: 0.34, phase: 0.1,
+    good: [0.42, 0.58], best: [0.47, 0.53], timeout: 9, stamp: false,
+    onValue: (v, t) => { gift.obj.rotation.set(0, (v - 0.5) * 2 * PI, 0); gift.pos.copy(hold); gift.pos.y += Math.sin(t * 7) * 0.003; },
+  });
+  if (r.grade === 'none') gift.obj.rotation.y = PI;
+  const err = Math.abs(Math.atan2(Math.sin(gift.obj.rotation.y), Math.cos(gift.obj.rotation.y)));
+  if (err > 2.4) judge(ctx, 'funny', '逆さ'); else if (r.grade !== 'none') judge(ctx, r.grade);
+  // ひとこと
+  ctx.objective('<em>ひとこと</em>添える');
+  ctx.say('mother', 'まあ、そんなに気をつかわなくていいのに。', 2.2);
+  const c = await choose(ctx, { list: lines, timer: 7 });
+  out.line = c.index;
+  if (c.index) ctx.say('player', c.index === 3 ? '（……すっ）' : lines[c.index - 1].text.replace(/[「」]/g, ''), 2.4);
+  // 差し出す
+  ctx.objective('押している間 <em>差し出す</em>。お父さんの手のところで、はなす');
+  const zA = hold.z, zHand = HANDOFF.z, zMax = 4.12;
+  const vHand = (zHand - zA) / (zMax - zA);
+  gift.held = true;
+  const g = await charge(ctx, {
+    cap: '差し出す', key: '押している間 差し出す（お父さんの手ではなす）', rate: 0.42, keep: true, stamp: false,
+    good: [vHand - 0.09, vHand + 0.07], best: [vHand - 0.04, vHand + 0.03], danger: [0.92, 1],
+    onValue: (v) => { gift.pos.set(hold.x, THREE.MathUtils.lerp(hold.y, HANDOFF.y, Math.min(1, v * 1.5)), zA + v * (zMax - zA)); player.s.lean = v * 0.5; },
+  });
+  gift.held = false;
+  stopHands(); player.reach('R', null); player.reach('L', null); player.s.lean = 0;
+  if (g.grade === 'over') {
+    // 押しすぎて、お父さんの手の先へ。机に落ちる
+    out.dropped = 1; ctx.find('giftDrop'); father.gesture('flinch'); mother.gesture('flinch'); ctx.story.moodAdd(-4);
+    gift.drop(V3(0, 0.3, 0.5)); await fall(ctx, gift);
+    gift.free = false; gift.pos.set(HANDOFF.x, TABLE_Y, Math.min(4.1, gift.pos.z)); gift.obj.rotation.x = 0; gift.obj.rotation.z = 0;
+    await ctx.talk('player', '失礼しました……！', 1.4);
+    out.placed = true; out.handed = true;
+  } else {
+    judge(ctx, g.grade, g.grade === 'bad' ? '届かない' : null);
+    if (g.grade === 'bad') {
+      // 手前すぎて、お父さんが身を乗り出して受け取る
+      father.s.lean = 0.7; await ctx.wait(0.6); out.hovered = true; ctx.story.moodAdd(-2); father.s.lean = 0;
+    }
+    out.handed = true;
+  }
+  bag.obj.visible = false;
+  return out;
+}
+
+// A6 お茶：押している間 口元へ運んで傾ける。熱くなる前にはなす。質問が来たら、すぐはなす
+async function easyTea(ctx, S, { cup, saucer, mouth, spillAt, qList }) {
+  const { player, partner, father } = ctx.actors;
+  ctx.objective('押している間 <em>お茶を飲む</em>。金色でひと口、赤は熱い<br><small>話しかけられたら、すぐはなす</small>');
+  const base = V3(saucer.pos.x, TABLE_Y + 0.012, saucer.pos.z);
+  let v = 0, qShown = false, chokeT = 0, done = false, res = null, qChoices = false;
+  ctx.hud.keys([['act', '押している間 飲む（はなすと置く）']]);
+  const GOOD = [0.55, 0.84], BEST = [0.6, 0.76], DANGER = [0.88, 1];
+  await ctx.until(dt => {
+    S.t += dt;
+    const held = ctx.input.act && !S.lock;
+    v = held ? Math.min(1, v + (v >= GOOD[0] && v < GOOD[1] ? 0.13 : 0.32) * dt) : Math.max(0, v - 0.9 * dt);   // 金色の中はゆっくり（ひと口ぶん、いられる）
+    if (S.lock && v === 0) S.lock = false;
+    // 位置と傾き
+    const m = mouth();
+    const lift = clamp01(v / 0.38), tilt = clamp01((v - 0.38) / 0.62) * 1.55;
+    cup.pos.lerpVectors(base, m.clone().add(V3(0, -0.04, 0)), lift * lift * (3 - 2 * lift));
+    cup.obj.quaternion.setFromAxisAngle(player.side(), -tilt);
+    S.placed = v < 0.02;
+    if (v > 0.05) player.reach('R', cup.pos.clone().add(V3(0, 0.04, -0.03)), 1); else player.reach('R', null);
+    // 飲む
+    if (v >= GOOD[0] && v < DANGER[0]) { S.drank += dt * 0.09; cup.level = Math.max(0.2, cup.level - dt * 0.05); setTea(cup); }
+    if (v >= DANGER[0] && !S.hot) { S.hot = true; ctx.find('hot'); player.gesture('flinch', 0.7); ctx.say('player', 'あつっ……！', 1.2); spillAt(0.03); S.lock = true; }
+    if (v >= 1) { spillAt(0.08); S.lock = true; }
+    ctx.hud.gauge(true, { value: v, good: GOOD, best: BEST, danger: DANGER, cap: S.drank >= 0.1 ? 'ひと口いただいた' : 'お茶をいただく' });
+    // 質問
+    if (!qShown && (v > 0.5 || S.t > 14)) { qShown = true; S.qState = 'ask'; S.qT = 0; ctx.say('father', 'で、高橋くんは、お仕事は何を？', 2.6); ctx.hud.stamp('！', 'funny'); ctx.sfx.play('whoosh', 0.6); }
+    if (S.qState === 'ask') {
+      S.qT += dt;
+      if (v > 0.4) {
+        chokeT += dt;
+        if (chokeT > 1.2 && !S.choke) {
+          S.choke = true; ctx.find('choke'); ctx.sfx.play('spill'); spillAt(0.12); cup.level = Math.max(0, cup.level - 0.12); setTea(cup);
+          player.gesture('flinch', 1); ctx.say('player', 'ぶほっ……！ げほっ……し、失礼しました……営業を、しています。', 3.2); ctx.story.moodAdd(-6);
+          S.qState = 'answered'; S.qAns = 0.3; S.lock = true;
+        }
+      } else if (!qChoices && v < 0.1) {
+        qChoices = true;
+        if (S.qT < 1.2) { ctx.find('quickDraw'); }
+        ctx.hud.choices(qList.slice(0, 1).map(q => ({ text: q.text })), { timer: 7 });
+        S.qAnsT = 0;
+      }
+      if (qChoices && S.qState === 'ask') {
+        S.qAnsT += dt; ctx.hud.choiceTimer(1 - S.qAnsT / 7);
+        if (ctx.input.choice() === 1) { ctx.hud.choices(null); S.qState = 'answered'; S.qAns = 1; ctx.say('player', '〇〇という会社で、営業をしています。', 2.6); father.gesture('nod'); ctx.story.moodAdd(2); judge(ctx, S.qT < 2.5 ? 'best' : 'good'); }
+        else if (S.qAnsT > 7) { ctx.hud.choices(null); S.qState = 'answered'; S.qAns = 0.2; ctx.find('partnerAnswer'); ctx.say('partner', '……あ、悠真さんは、営業のお仕事をしてて。', 2.6); ctx.story.feel('partner', '助け舟'); ctx.story.addCare('A6', -1, 'silent'); }
+      }
+    }
+    if (S.spilled > 0.06) { res = { spill: true }; return true; }
+    if (S.placed && S.drank >= 0.1 && S.qState === 'answered') { res = { ok: true }; return true; }
+    return false;
+  });
+  ctx.hud.gauge(false); ctx.hud.choices(null);
+  cup.pos.copy(base); cup.obj.quaternion.identity(); player.reach('R', null); S.placed = true;
+  if (res.ok && !S.hot && !S.choke) judge(ctx, 'best', 'ごちそうさま');
+  return res;
+}
+
+// こぼしたお茶：くり返し押して拭く
+async function easyWipe(ctx, S) {
+  const { father, partner } = ctx.actors;
+  const cloth = ctx.props.cloth;
+  if (!S.stain) return;
+  const st0 = S.stain.position.clone(), sc0 = S.stain.scale.x;
+  cloth.obj.visible = true; cloth.free = false; cloth.pos.set(st0.x, st0.y + 0.012, st0.z);
+  ctx.shot([st0.x - 0.6, st0.y + 0.62, st0.z - 0.22], [st0.x + 0.05, st0.y, st0.z + 0.04], { fov: 46, speed: 3 });
+  ctx.objective('<em>くり返し押して</em>、こぼれたお茶を拭く');
+  await mash(ctx, {
+    cap: '拭く', key: 'くり返し押して 拭く', per: 0.1, decay: 0.05,
+    onPress: () => { if (Math.random() < 0.5) ctx.sfx.play('wipe', 0.5); },
+    onValue: (v, t) => { S.stain.scale.setScalar(Math.max(0.005, sc0 * (1 - v))); cloth.pos.set(st0.x + Math.sin(t * 14) * 0.05 * (v < 1 ? 1 : 0), st0.y + 0.012, st0.z + Math.cos(t * 11) * 0.03); ctx.actors.player.reach('R', cloth.pos.clone().add(V3(0, 0.03, 0)), 1); },
+  });
+  ctx.actors.player.reach('R', null);
+  ctx.removeStain(S.stain); S.stain = null; cloth.obj.visible = false;
+  judge(ctx, 'good', 'きれいに');
+  ctx.shot([-1.05, 1.35, 2.15], [-0.15, 0.62, 3.9], { fov: 44, speed: 2.5 });
+  await ctx.talk('father', '……それで、式は、いつごろを考えてるの？', 2.6);
+  const c = await choose(ctx, { list: [{ text: '「来年の秋ごろを考えています」' }, { text: '「これから、二人で相談して決めます」' }], timer: 8 });
+  if (c.index) { await ctx.talk('player', ['来年の秋ごろを考えています。', 'これから、二人で相談して決めます。'][c.index - 1], 2.2); father.gesture('nod'); }
+  else { ctx.find('partnerAnswer'); await ctx.talk('partner', '来年の秋ごろかな、って話してて。', 2.4); ctx.story.addCare('A6', -0.5, 'silent2'); }
+}
+
+// A8 帰り：押すと戸の外へ歩く（相手がまだ頭を下げている間に押すと、背を向けてしまう）→ ふり返って押すと会釈
+async function easyLeave(ctx) {
+  const { player, partner, father, mother } = ctx.actors;
+  let turned = false, nod = false;
+  ctx.objective('二人が顔を上げてから、<em>押して</em>戸の外へ');
+  ctx.hud.keys([['act', '押す＝戸の外へ歩く']]);
+  await ctx.until(() => ctx.input.actHit);
+  if (father.s.bow > 6 || mother.s.bow > 6) { turned = true; ctx.find('backTurn'); ctx.story.moodAdd(-2); }
+  ctx.hud.keys([]);
+  ctx.shot([0.62, 1.75, 0.95], [-0.1, 0.8, -1.2], { fov: 50, speed: 3 });
+  const pw = ctx.walkTo(partner, 0.3, -1.4, 0.7, 0.5);
+  await ctx.walkTo(player, -0.12, -1.32, 0.75);
+  await pw;
+  player.turnTo(0, 0.5);
+  ctx.objective('ふり返って、<em>押す</em>と会釈');
+  const r = await tap(ctx, {
+    cap: '会釈', key: '押す＝会釈', timeout: 3.2, stamp: false,
+    values: t => clamp01(t / 3.2), good: [0.05, 0.75], best: [0.1, 0.45],
+  });
+  if (r.grade !== 'none') {
+    nod = true; judge(ctx, r.grade === 'bad' ? 'good' : r.grade);
+    await ctx.tween(0.8, u => { player.s.bow = Math.sin(u * PI) * 18; });
+    mother.gesture('nod'); father.gesture('nod');
+  }
+  return { turned, nod };
 }

@@ -91,6 +91,7 @@ function makeCtx(token, step) {
   const ctx = {
     token, step, R, rig, hud, input, sfx, story, actors, props, house,
     get assist() { return data.settings.assist === '1'; },
+    get easy() { return data.settings.controls !== 'pro'; },
     until: cond => runner.until(token, cond),
     wait: sec => { let t = 0; return runner.until(token, dt => (t += dt) >= sec); },
     every(fn) { const h = { fn }; hooks.push(h); local.push(h); return () => { hooks = hooks.filter(x => x !== h); }; },
@@ -129,7 +130,10 @@ function makeCtx(token, step) {
     },
     find(id) {
       const f = story.find(id);
-      if (f) { hud.toast(data.finds[id] ? '珍事' : '珍事を発見', f.name); data.finds[id] = (data.finds[id] || 0) + 1; SAVE.save(data); sfx.play('awk', 0.5); }
+      if (f) {
+        hud.toast(data.finds[id] ? '珍事' : '珍事を発見', f.name); data.finds[id] = (data.finds[id] || 0) + 1; SAVE.save(data);
+        if (ctx.easy) { hud.stamp(f.name, 'funny'); sfx.play('boing', 0.8); rig.shake = Math.max(rig.shake || 0, 0.015); } else sfx.play('awk', 0.5);
+      }
     },
     addStain(x, y, z) { const m = makeStain(); m.position.set(x, y, z); R.scene.add(m); stains.push(m); return m; },
     removeStain(m) { if (!m) return; R.scene.remove(m); stains = stains.filter(s => s !== m); },
@@ -163,7 +167,7 @@ async function playFrom(index) {
     const token = { alive: true }; curToken = token;
     const ctx = makeCtx(token, st.id); window.__shosa.ctx = ctx;
     hud.chapter(`${SCENE.chapter}　${SCENE.title}`, st.title);
-    hud.objective(''); hud.keys([]); hud.choices(null); hud.meter(false); hud.clearSay();
+    hud.objective(''); hud.keys([]); hud.choices(null); hud.meter(false); hud.gauge(false); hud.clearSay();
     try {
       STEPS[st.id].setup(ctx);
       await STEPS[st.id].run(ctx);
@@ -248,7 +252,7 @@ function goFull() {
 function applySettings() {
   const s = data.settings;
   document.body.classList.remove('sub-s', 'sub-m', 'sub-l'); document.body.classList.add('sub-' + s.subSize);
-  input.sens = s.sens; sfx.setVol(s.vol);
+  input.sens = s.sens; sfx.setVol(s.vol); input.easy = s.controls !== 'pro';
   if (R.quality !== s.quality) R.setQuality(s.quality);
 }
 function renderSelect() {

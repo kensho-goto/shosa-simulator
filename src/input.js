@@ -49,7 +49,11 @@ export class Input {
     const sx = this.stick.x, sy = this.stick.y;
     return Math.hypot(sx, sy) > 0.2 ? { x: sx, y: sy } : { x, y };
   }
-  get bow() { return this.key(' '); }
+  // かんたん操作：Space・クリック・画面を押す、のどれでも同じ1つのボタン
+  get act() { return this.key(' ') || this.mouse.left; }
+  get actHit() { return this.hit(' ') || this.mouse.leftPressed; }
+  get actUp() { return this.up(' ') || this.mouse.leftReleased; }
+  get bow() { return this.key(' ') || (this.easy && this.mouse.left); }
   get sit() { return this.key('f'); }
   get turn() { return (this.key('e') ? 1 : 0) - (this.key('q') ? 1 : 0); }
   get tilt() { return (this.key('x') ? 1 : 0) - (this.key('z') ? 1 : 0); }

@@ -1,6 +1,6 @@
 // 画面の表示：字幕・目的・キーの案内・メーター・空気・選択肢・発見の知らせ
 const $ = id => document.getElementById(id);
-const KEYNAME = { space: 'Space', mouse: 'マウス左', wasd: 'W A S D', qe: 'Q / E', wheel: 'ホイール', zx: 'Z / X', f: 'F', enter: 'Enter', num: '1〜3', r: 'R', esc: 'Esc' };
+const KEYNAME = { act: 'Space / クリック', space: 'Space', mouse: 'マウス左', wasd: 'W A S D', qe: 'Q / E', wheel: 'ホイール', zx: 'Z / X', f: 'F', enter: 'Enter', num: '1〜3', r: 'R', esc: 'Esc' };
 export class Hud {
   constructor() {
     this.el = $('hud'); this.sub = $('subtitle'); this.obj = $('objective'); this.keysEl = $('keys');
@@ -21,6 +21,22 @@ export class Hud {
     const z = this.meterEl.querySelector('.zone');
     if (zone) { z.style.display = ''; z.style.top = `${(1 - zone[1]) * T}px`; z.style.height = `${(zone[1] - zone[0]) * T}px`; } else z.style.display = 'none';
     this.meterEl.querySelector('.cap').textContent = cap;
+  }
+  // 横長のゲージ（かんたん操作）。good・best は 0〜1 の範囲。danger は赤くなるところ
+  gauge(on, { value = 0, good = null, best = null, danger = null, cap = '' } = {}) {
+    const g = this.gaugeEl || (this.gaugeEl = $('gauge'));
+    g.hidden = !on; if (!on) return;
+    const put = (el, z) => { if (!z) { el.style.display = 'none'; return; } el.style.display = ''; el.style.left = `${z[0] * 100}%`; el.style.width = `${(z[1] - z[0]) * 100}%`; };
+    put(g.querySelector('.good'), good); put(g.querySelector('.best'), best); put(g.querySelector('.danger'), danger);
+    g.querySelector('.needle').style.left = `${Math.max(0, Math.min(1, value)) * 100}%`;
+    if (cap !== g._cap) { g.querySelector('.cap').textContent = cap; g._cap = cap; }
+  }
+  // 判定の大きな字（見事・よし・あっ）
+  stamp(text, kind = 'good') {
+    const s = this.stampEl || (this.stampEl = $('stamp'));
+    s.className = ''; void s.offsetWidth; s.textContent = text; s.className = 'show ' + kind;
+    s.style.fontSize = text.length > 4 ? `clamp(30px, ${Math.min(9, 64 / text.length).toFixed(1)}vw, ${Math.round(Math.min(110, 760 / text.length))}px)` : '';
+    clearTimeout(this._st); this._st = setTimeout(() => { s.className = ''; }, 1100);
   }
   mood(v) { this.moodEl.querySelector('i').style.width = `${Math.max(3, v)}%`; this.moodEl.classList.toggle('bad', v < 35); }
   choices(list, { timer = 0 } = {}) {

@@ -51,6 +51,7 @@ async function drag(fromW, toW, { rotKey = null, rotMs = 0, beforeUp } = {}) {
 }
 
 const log = [];
+await p.addInitScript(() => { const k = 'shosa.v1'; const d = JSON.parse(localStorage.getItem(k) || '{}'); d.settings = { ...(d.settings || {}), controls: 'pro' }; localStorage.setItem(k, JSON.stringify(d)); });
 await p.goto(url);
 await until(() => document.getElementById('loading').classList.contains('hide'));
 await W(1500); await shot('00-title');
