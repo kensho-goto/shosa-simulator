@@ -27,6 +27,8 @@ async function drag(fromW, toW, { rot = 0, beforeUp } = {}) {
   await p.mouse.up(); await W(300);
 }
 const log = [];
+// この台本は「こだわり操作」（マウス・キーの使い分け）で遊ぶ
+await p.addInitScript(() => { const k = 'shosa.v1'; const d = JSON.parse(localStorage.getItem(k) || '{}'); d.settings = { ...(d.settings || {}), controls: 'pro' }; localStorage.setItem(k, JSON.stringify(d)); });
 await p.goto(url);
 await until(() => document.getElementById('loading').classList.contains('hide'));
 await W(1500); await shot('00-title');

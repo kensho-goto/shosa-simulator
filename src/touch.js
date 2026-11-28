@@ -7,6 +7,7 @@ export const isTouch = () => matchMedia('(pointer: coarse)').matches || /[?&]tou
 
 // キーの名前 → ボタン
 const BTN = {
+  act: { key: ' ', hold: true, label: () => '押す', big: true },
   space: { key: ' ', hold: true, label: t => /会釈/.test(t) ? '会釈' : 'お辞儀', big: true },
   f: { key: 'f', hold: true, label: t => /正座/.test(t) ? '正座' : '立つ', big: true },
   W: { key: 'w', tap: true, label: () => '膝で進む', big: true },

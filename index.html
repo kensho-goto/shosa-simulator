@@ -30,6 +30,8 @@
   <div id="choices"></div>
   <div id="keys"></div>
   <div id="toast"></div>
+  <div id="gauge" hidden><span class="cap"></span><div class="track"><b class="danger"></b><b class="good"></b><b class="best"></b><i class="needle"></i></div></div>
+  <div id="stamp"></div>
 </div>
 
 <!-- スマホの操作（その場面で使うものだけ出る） -->
@@ -88,6 +90,7 @@
   <h2>設定</h2>
   <label>字幕の大きさ <select data-set="subSize"><option value="s">小</option><option value="m">中</option><option value="l">大</option></select></label>
   <label>マウスの感度 <input type="range" min="0.4" max="2" step="0.1" data-set="sens"></label>
+  <label>操作 <select data-set="controls"><option value="easy">かんたん（押すだけ）</option><option value="pro">こだわり（マウス・キーを使い分ける）</option></select></label>
   <label>操作の手助け <select data-set="assist"><option value="0">なし</option><option value="1">あり（向きが合いやすい・こぼれにくい）</option></select></label>
   <label>画質 <select data-set="quality"><option value="high">きれい</option><option value="low">かるい</option></select></label>
   <label>音の大きさ <input type="range" min="0" max="1" step="0.05" data-set="vol"></label>
