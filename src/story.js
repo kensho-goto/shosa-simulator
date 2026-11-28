@@ -34,6 +34,7 @@ export class Story {
     this.found = [];     // この回で見つけた珍事
     this.log = [];
     this.done = {};      // 終えたステップ
+    this.rush = null;    // お茶の間ラッシュの記録
   }
   feel(who, kind, amt = 1) {
     const n = this.npc[who] || (this.npc[who] = { 期待: 1, 戸惑い: 0, 気まずさ: 0, 助け舟: 0, 納得: 0 });

@@ -27,6 +27,7 @@
 | 家の形・家具・小物（靴・手土産・湯のみ・盆・布巾） | `src/env.js`・`src/props.js` | このリポジトリで書いた形（箱や円柱の組み合わせ） | 自作 | 仮素材 |
 | 効果音・部屋の空気の音 | `src/audio.js` | ブラウザーの中で計算して作る音 | 自作 | 仮素材 |
 | アニメ風の頭（大きな目・眉・口・髪・眼鏡） | `src/toon.js` | このリポジトリで書いた形（球などの組み合わせ）。体・手・骨は上の Rocketbox のまま | 自作 | 仮素材 |
+| 急須・お菓子の皿とおまんじゅう・障子の穴・カツラ | `src/props.js`・`src/toon.js` | 自作（形をコードで作った） | — | 仮 |
 | ふち線 OutlineEffect | `vendor/three-addons/effects/OutlineEffect.js` | three.js r184 の examples から写した | MIT | 本番 |
 | 字体 Dela Gothic One・M PLUS Rounded 1c | Google Fonts から読む（`index.html`） | Google Fonts | SIL Open Font License | 本番 |
 | 描画の部品 three.js r170 | `vendor/three-build`・`vendor/three-addons`（使う分だけ） | three.js | MIT（`vendor/LICENSE-three.txt`） | 本番 |

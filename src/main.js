@@ -87,21 +87,24 @@ function floorAt(x, z) {
 
 // ---------------- 毎フレーム ----------------
 let last = performance.now();
+let timeScale = 1, slowUntil = 0;   // 大事件のときのスローモーション
 function loop(now) {
-  const dt = Math.min(0.05, (now - last) / 1000); last = now;
+  const real = Math.min(0.05, (now - last) / 1000); last = now;
+  if (now > slowUntil) timeScale = 1;
+  const dt = real * timeScale;
   if (!paused) {
     runner.tick(dt);
     for (const h of hooks.slice()) h.fn(dt);
     if (actors) { const tk = window.__shosa.ctx && window.__shosa.ctx.talking; const sp = tk && actors[tk]; for (const [k, a] of Object.entries(actors)) { a.s.talking = tk === k; a.s.idleLook = sp ? (sp === a ? (k === 'player' ? actors.partner : actors.player) : sp) : null; a.update(dt); } }
     if (mode === 'title') titleCam(dt);
   }
-  rig.update(paused ? 0 : dt);
-  hud.update(dt);
+  rig.update(paused ? 0 : real);
+  hud.update(real);
   if (input.hit('escape') && mode === 'play') togglePause();
   if (input.hit('r') && mode === 'play' && !paused) retryStep();
   input.endFrame();
   R.render();
-  window.__shosa.fps = 0.95 * (window.__shosa.fps || 60) + 0.05 / Math.max(dt, 1e-3);
+  window.__shosa.fps = 0.95 * (window.__shosa.fps || 60) + 0.05 / Math.max(real, 1e-3);
   requestAnimationFrame(loop);
 }
 let tt = 0;
@@ -164,6 +167,8 @@ function makeCtx(token, step) {
     addStain(x, y, z) { const m = makeStain(); m.position.set(x, y, z); R.scene.add(m); stains.push(m); return m; },
     removeStain(m) { if (!m) return; R.scene.remove(m); stains = stains.filter(s => s !== m); },
     clearStains() { for (const s of stains) R.scene.remove(s); stains = []; },
+    toon: obj => toonLater(obj),
+    slowmo(scale, sec) { timeScale = scale; slowUntil = performance.now() + sec * 1000; },
     hideCups(h) { for (const k of ['player', 'partner', 'father', 'mother']) { props['cup_' + k].obj.visible = !h; props['saucer_' + k].obj.visible = !h; } },
   };
   ctx.cleanup = () => { for (const h of local) hooks = hooks.filter(x => x !== h); (ctx._abortFns || []).forEach(f => { try { f(new Abort()); } catch (e) { /* */ } }); };
@@ -180,10 +185,12 @@ function fadeEl() {
 }
 
 // ---------------- 進行 ----------------
-async function playFrom(index) {
+let only = false;   // その場面だけ遊ぶ（タイトルの「お茶の間60秒」）
+async function playFrom(index, opt = {}) {
   mode = 'play'; paused = false; showScreen(null); hud.show(true);
   fadeEl().style.opacity = 0;
-  if (index === 0) story.reset();
+  only = !!opt.only;
+  if (index === 0 || only) story.reset();
   sfx.ensure();
   let i = index;
   while (i < SCENE.steps.length) {
@@ -199,6 +206,7 @@ async function playFrom(index) {
       await STEPS[st.id].run(ctx);
       story.done[st.id] = true;
       i++;
+      if (only) break;
     } catch (e) {
       if (!(e instanceof Abort)) { console.error(e); hud.aside('（うまく動かなかったので、このところをやり直します）', 3); i = curIndex; await new Promise(r => setTimeout(r, 1200)); }
       else if (pending === 'quit') { pending = null; ctx.cleanup(); return; }
@@ -206,6 +214,7 @@ async function playFrom(index) {
     } finally { token.alive = false; ctx.cleanup(); }
     hud.mood(story.mood);
   }
+  if (only) { showResult(); return; }
   data.progress[SCENE.id] = SCENE.steps.length; SAVE.save(data);
   showResult();
 }
@@ -218,19 +227,29 @@ function togglePause() { paused = !paused; showScreen(paused ? 'pause' : null); 
 function showResult() {
   mode = 'result'; hud.show(false);
   { const f = fadeEl(); f.style.transition = 'opacity 1.2s'; f.style.opacity = 0; }
-  const ids = SCENE.steps.map(s => s.id);
+  const ids = only ? ['A6'] : SCENE.steps.map(s => s.id);
   const s = story.summary(ids);
+  const rush = story.rush;
+  const yen = n => '¥' + Math.round(n).toLocaleString('ja-JP');
   if (s.tech >= 90 && s.care >= 75 && s.complete) { const f = story.find('perfect'); if (f) { data.finds.perfect = (data.finds.perfect || 0) + 1; } }
   const total = Object.keys(FINDS).length;
   const have = Object.keys(data.finds).length;
   const weak = ids.filter(i => story.tech[i] != null && story.tech[i] < 0.6).map(i => SCENE.steps.find(x => x.id === i).title);
-  $('resTitle').textContent = s.complete ? 'ご挨拶、成立。' : 'ご挨拶は、まだ途中。';
-  $('resGrid').innerHTML = [
+  $('resTitle').textContent = only ? 'お茶の間、終了。' : s.complete ? 'ご挨拶、成立。' : 'ご挨拶は、まだ途中。';
+  const rushRows = rush ? [
+    ['気配り', `${rush.handled}<small style="font-size:18px;display:inline;margin-left:6px">／ ${rush.handled + rush.missed}</small>`, rush.missed ? `取りこぼし ${rush.missed}` : 'ひとつも取りこぼさなかった。'],
+    ['被害総額', `${yen(rush.damage)}${rush.priceless ? '<small style="font-size:26px;display:inline;margin-left:4px">＋？</small>' : ''}`, [rush.chained ? `大事件 ${rush.chained}回` : rush.damage ? '小さな事件で済んだ。' : '何も壊さなかった。', rush.priceless ? 'お父さんの秘密（プライスレス）' : ''].filter(Boolean).join('・'), only ? 'w2' : 'w4'],
+  ] : [];
+  $('resGrid').innerHTML = (only ? [
+    rushRows[0], rushRows[1],
+    ['珍事', `${s.finds.length}`, `ずかん ${Object.keys(data.finds).length} / ${total}`],
+  ] : [
     ['用事の成立', s.complete ? '成立' : '未成立', s.complete ? '最後まで、場を成り立たせた。' : ''],
     ['所作', `${grade(s.tech)}<small style="font-size:18px;display:inline;margin-left:8px">${s.tech}</small>`, weak.length ? `練習したいところ：${weak.join('・')}` : 'どの所作も、よくできた。'],
     ['配慮と立て直し', `${grade(s.care)}<small style="font-size:18px;display:inline;margin-left:8px">${s.care}</small>`, story.log.filter(l => l.d > 0).length ? '失敗のあとも、きちんと対応した。' : '失敗に、どう向き合うかも見られている。'],
     ['珍事', `${s.finds.length}`, `ずかん ${have} / ${total}`],
-  ].map(([a, b, c]) => `<div><small>${a}</small><b>${b}</b><p>${c}</p></div>`).join('');
+    ...rushRows.slice(1),
+  ]).map(([a, b, c, cls]) => `<div class="${cls || ''}"><small>${a}</small><b>${b}</b><p>${c}</p></div>`).join('');
   $('resFinds').innerHTML = s.finds.length ? '今回の珍事：' + s.finds.map(id => `<b>${FINDS[id].name}</b>`).join('　') : '今回は、珍事なし。';
   data.best[SCENE.id] = { tech: Math.max(s.tech, data.best[SCENE.id]?.tech || 0), care: Math.max(s.care, data.best[SCENE.id]?.care || 0) };
   SAVE.save(data);
@@ -261,6 +280,7 @@ function setupMenus() {
     sfx.ensure();
     const a = b.dataset.act;
     if (a === 'story') { goFull(); playFrom(0); }
+    if (a === 'rush') { goFull(); playFrom(SCENE.steps.findIndex(x => x.id === 'A6'), { only: true }); }
     if (a === 'select') { backTo = mode === 'result' ? 'result' : 'title'; renderSelect(); showScreen('select'); }
     if (a === 'zukan') { backTo = 'title'; renderZukan(); showScreen('zukan'); }
     if (a === 'settings') { backTo = paused ? 'pause' : 'title'; showScreen('settings'); }
@@ -268,7 +288,7 @@ function setupMenus() {
     if (a === 'resume') togglePause();
     if (a === 'retryStep') retryStep();
     if (a === 'quit') quitToTitle();
-    if (a === 'again') playFrom(0);
+    if (a === 'again') { if (only) playFrom(SCENE.steps.findIndex(x => x.id === 'A6'), { only: true }); else playFrom(0); }
   });
   for (const el of document.querySelectorAll('[data-set]')) {
     const k = el.dataset.set; el.value = data.settings[k];

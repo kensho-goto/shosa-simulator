@@ -94,22 +94,22 @@ await clickChoice(1);
 await gaugeOn(10000); await W(300);
 if (sloppy) await holdTo(needleAt(0.99), '05-gift-handing', 0.5); else await holdTo(pastBestMid, '05-gift-handing', 0.5);
 
-// A6 お茶（ためる。質問が来たらすぐはなす → 答える → もう一度飲む）
-await until(() => __shosa.step === 'A6', null, 40000);
-await gaugeOn(20000); await W(300);
-await p.keyboard.down(' ');
-await waitNeedle(needleAt(0.5)); await W(sloppy ? 1600 : 150);
-await p.keyboard.up(' '); await W(120); await shot('06-tea-drinking');
-if (sloppy) {
-  // むせたあと、もう一度。今度は赤まで → あつっ → こぼす → 拭く
-  await W(1500); await p.keyboard.down(' '); await waitNeedle(needleAt(0.99), 8000).catch(() => {}); await p.keyboard.up(' ');
-  await clickChoice(1);
-  await gaugeOn(15000); await W(300);
-  for (let i = 0; i < 40 && await ev(() => !document.getElementById('gauge').hidden); i++) { await press(); await W(70); }
-  await clickChoice(1);
-} else {
-  await clickChoice(1); await W(1500);
-  await gaugeOn(10000); await p.keyboard.down(' '); await waitNeedle(inBest); await W(1300); await p.keyboard.up(' ');
+// A6 お茶の間ラッシュ（出てきた輪を押す。clumsy は何も押さない）
+await until(() => __shosa.step === 'A6' && __shosa.story.rush, null, 40000);
+let shotTea = false;
+while (await step() === 'A6') {
+  const s = await ev(() => { const S = __shosa.story.rush; if (!S) return null; return { over: S.over, t: S.t, numb: S.numb, tasks: S.tasks.map(T => { const r = T.el.querySelector('svg').getBoundingClientRect(); return { kind: T.kind, left: T.left, fill: T.fill, x: r.x + r.width / 2, y: r.y + r.height / 2 }; }) }; });
+  if (!s) break;
+  if (!shotTea && s.t > 20) { shotTea = true; await shot('06-tea-rush'); }
+  if (s.over) { if (await ev(() => !!document.querySelector('#rush .sum'))) { await W(1500); await shot('06-tea-sum'); await p.mouse.click(640, 360); await W(800); } else await W(300); continue; }
+  if (sloppy) { await W(250); continue; }
+  const t = s.tasks.sort((a, b) => (a.kind === 'numb' ? (s.numb > 0.6 ? -1 : 99) : a.left) - (b.kind === 'numb' ? (s.numb > 0.6 ? -1 : 99) : b.left))[0];
+  if (!t) { await W(100); continue; }
+  if (t.kind === 'pour') { await p.mouse.move(t.x, t.y); await p.mouse.down(); for (let i = 0; i < 60; i++) { const f = await ev(() => __shosa.story.rush.tasks.find(T => T.kind === 'pour')?.fill ?? 9); if (f >= 0.82) break; await W(30); } await p.mouse.up(); }
+  else if (t.kind === 'sip') { for (let i = 0; i < 3; i++) { await p.mouse.click(t.x, t.y); await W(380); } }
+  else if (t.kind === 'numb') { for (let i = 0; i < 6; i++) { await p.mouse.click(t.x, t.y); await W(70); } }
+  else await p.mouse.click(t.x, t.y);
+  await W(400);
 }
 
 // A7 結婚の意思（話の切れ目で言葉を押す）→ 二人でお辞儀

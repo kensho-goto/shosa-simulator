@@ -170,7 +170,7 @@ export function buildHouse(scene, renderer) {
     c.fillStyle = '#b5302a'; c.fillRect(48, 640, 14, 14);
     c.fillStyle = '#3a2c1e'; c.fillRect(0, h - 26, w, 26); c.fillRect(0, 0, w, 14);
   });
-  g.add(plane(0.42, 1.25, new THREE.MeshStandardMaterial({ map: scroll, roughness: 0.95 }), -0.88, 1.15, tz - 0.01, Math.PI));
+  { const k = plane(0.42, 1.25, new THREE.MeshStandardMaterial({ map: scroll, roughness: 0.95, side: THREE.DoubleSide }), -0.88, 1.15, tz - 0.01, Math.PI); k.name = 'kakejiku'; g.add(k); }
   // 花（床の間）
   const vase2 = vase.clone(); vase2.position.set(-0.5, 0.1, R.z1 + 0.3); vase2.scale.setScalar(1.2); g.add(vase2);
   const branch = new THREE.Mesh(new THREE.CylinderGeometry(0.004, 0.006, 0.5, 6), new THREE.MeshStandardMaterial({ color: '#3a2a1c' }));
