@@ -142,3 +142,46 @@ export function makeStain() {
   const m = new THREE.Mesh(new THREE.CircleGeometry(1, 24), new THREE.MeshPhysicalMaterial({ color: '#6d6a22', roughness: 0.05, transparent: true, opacity: 0.55, clearcoat: 1 }));
   m.rotation.x = -Math.PI / 2; m.scale.setScalar(0.001); m.renderOrder = 2; return m;
 }
+
+// ---- 急須（お茶を注ぐ）----  注ぎ口は +x
+export function makeTeapot() {
+  const g = new THREE.Group();
+  const glaze = new THREE.MeshPhysicalMaterial({ color: '#7a4a2c', roughness: 0.35, clearcoat: 0.8 });
+  const body = new THREE.Mesh(new THREE.SphereGeometry(0.055, 28, 18), glaze); body.scale.set(1, 0.78, 1); body.position.y = 0.045; g.add(body);
+  const lid = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.034, 0.012, 24), glaze); lid.position.y = 0.088; g.add(lid);
+  const knob = new THREE.Mesh(new THREE.SphereGeometry(0.009, 12, 8), glaze); knob.position.y = 0.098; g.add(knob);
+  const spout = new THREE.Mesh(new THREE.CylinderGeometry(0.006, 0.012, 0.06, 12), glaze); spout.position.set(0.068, 0.06, 0); spout.rotation.z = -0.9; g.add(spout);
+  const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.009, 0.011, 0.09, 12), glaze); handle.position.set(0, 0.05, 0.085); handle.rotation.x = Math.PI / 2; g.add(handle);
+  return shadowed(g);
+}
+// ---- お菓子（皿とおまんじゅう3つ）----
+export function makeSweets() {
+  const g = new THREE.Group();
+  const plate = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.07, 0.014, 32), new THREE.MeshPhysicalMaterial({ color: '#f1ece2', roughness: 0.3, clearcoat: 1 }));
+  plate.position.y = 0.007; g.add(plate);
+  const manju = [];
+  for (let i = 0; i < 3; i++) {
+    const m = makeManju(); const a = i * Math.PI * 2 / 3;
+    m.position.set(Math.cos(a) * 0.04, 0.014, Math.sin(a) * 0.04); g.add(m); manju.push(m);
+  }
+  g.userData.manju = manju;
+  return shadowed(g);
+}
+export function makeManju() {
+  const m = new THREE.Mesh(new THREE.SphereGeometry(0.024, 20, 14), new THREE.MeshStandardMaterial({ color: '#c98a4a', roughness: 0.7 }));
+  m.scale.y = 0.62; m.position.y = 0.014; m.castShadow = true;
+  const g = new THREE.Group(); g.add(m);
+  const top = new THREE.Mesh(new THREE.CircleGeometry(0.008, 12), new THREE.MeshStandardMaterial({ color: '#7a4a24' })); top.rotation.x = -Math.PI / 2; top.position.y = 0.0295; g.add(top);
+  return g;
+}
+// ---- 障子の破れ（穴）----
+export function makeHole() {
+  const c = document.createElement('canvas'); c.width = c.height = 128; const x = c.getContext('2d');
+  x.fillStyle = '#3a2c20'; x.beginPath();
+  for (let i = 0; i <= 18; i++) { const a = i / 18 * Math.PI * 2, r = 40 + (i % 2 ? 18 : 0) + Math.random() * 10; x.lineTo(64 + Math.cos(a) * r, 64 + Math.sin(a) * r); }
+  x.fill();
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(0.22, 0.22), new THREE.MeshBasicMaterial({ map: t, transparent: true, depthWrite: false }));
+  m.userData.outlineParameters = { visible: false }; m.userData.noToon = true;
+  return m;
+}

@@ -55,7 +55,7 @@ export function toonify(root, cache = new Map()) {
 export const LOOKS = {
   player: { skin: '#f6cba8', hair: '#221a15', style: 'short', brow: '#221a15' },
   partner: { skin: '#f9d6bd', hair: '#4a2a1a', style: 'pony', brow: '#3a2216', band: '#e8b84a', lash: true },
-  father: { skin: '#eebd98', hair: '#a8a29a', style: 'side', brow: '#7d776f', glasses: true },
+  father: { skin: '#eebd98', hair: '#a8a29a', style: 'side', brow: '#7d776f', glasses: true, wig: '#2b2420' },
   mother: { skin: '#f6d0b4', hair: '#5a3422', style: 'bob', brow: '#4a2a1a', lash: true },
 };
 const HIDE = new THREE.MeshBasicMaterial({ visible: false });
@@ -125,6 +125,12 @@ export class CartoonHead {
     if (st === 'side') {
       add(sph(R * 1.05, 36, 20, Math.PI * 0.5 + 1.25, Math.PI * 2 - 2.5, Math.PI * 0.3, Math.PI * 0.15), hair, 0, 0.01, 0, [1, 1.06, 1]);
       add(sph(R * 1.02, 24, 12, 0, Math.PI * 2, 0, Math.PI * 0.16), hair, 0, 0.004, -0.03, [1, 1.06, 1]);
+    }
+    // お父さんの頭の上は、少し黒すぎる（実はカツラ。大事件で飛ぶ）
+    if (look.wig) {
+      const w = add(sph(R * 1.075, 36, 20, 0, Math.PI * 2, 0, Math.PI * 0.36), toonM(look.wig, { }), 0, 0.006, 0.004, [1, 1.08, 1]);
+      w.rotation.x = -0.12; this.wig = w;
+      this.wigHome = { pos: w.position.clone(), quat: w.quaternion.clone(), scale: w.scale.clone() };
     }
     if (look.glasses) {
       const fr = basicM('#3b2a1e');

@@ -5,6 +5,7 @@ import * as THREE from 'three';
 import { GENKAN, ROOM } from './env.js';
 import { bow, hand, choose, walk, posture, tap, charge, mash, judge } from './ops.js';
 import { makeStain } from './props.js';
+import { rushTea, resetChaos, RUSH_FINDS } from './kikubari.js';
 
 const G = GENKAN.y;
 const PI = Math.PI;
@@ -43,6 +44,7 @@ export const FINDS = {
   quickDraw: { name: '早押しの名人', desc: '質問が来た瞬間、湯のみを置いた。' },
   perfect: { name: '非の打ちどころがない', desc: 'すべての所作を、ほぼ完ぺきにこなした。' },
 };
+Object.assign(FINDS, RUSH_FINDS);
 
 export const SCENE = {
   id: 'SC-A', chapter: '第一章', title: '親への結婚挨拶',
@@ -479,6 +481,7 @@ export const STEPS = {
   A6: {
     setup(ctx) {
       const { player } = ctx.actors;
+      resetChaos(ctx);
       baseRoom(ctx, { onCushion: true });
       ctx.place(player, SEAT.player.x, CUSHION_Y, SEAT.player.z, 0, 1);
       const { gift } = ctx.props; gift.obj.visible = true; gift.free = false; gift.pos.set(-0.88, 0, 4.42); gift.obj.rotation.set(0, 0, 0);
@@ -488,6 +491,8 @@ export const STEPS = {
       ctx.shot([-1.05, 1.35, 2.15], [-0.15, 0.62, 3.9], { fov: 44, cut: true });
     },
     async run(ctx) {
+      // かんたん操作：気配りがいくつも同時に来る「お茶の間ラッシュ」
+      if (ctx.easy) { await rushTea(ctx); return; }
       const { player, partner, father, mother } = ctx.actors;
       const cup = ctx.props.cup_player, saucer = ctx.props.saucer_player;
       father.lookAt(player); mother.lookAt(player);
