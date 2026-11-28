@@ -128,9 +128,10 @@ await W(sloppy ? 300 : 3200);
 if (sloppy) await press();
 await until(() => document.getElementById('gauge').querySelector('.cap').textContent.includes('お辞儀') && !document.getElementById('gauge').hidden, null, 20000);
 await W(300); await holdTo(pastBestMid, '08-farewell-bow', 0.4);
-await W(sloppy ? 100 : 2600); await press();
+await until(() => document.getElementById('objective').textContent.includes('戸の外'), null, 20000);
+await W(sloppy ? 100 : 2600); await press();   // clumsy は、相手がまだ頭を下げているうちに出る
 await gaugeOn(20000); await W(500); await press();
-await until(() => __shosa.mode === 'result', null, 30000); await W(1000); await shot('09-result');
+try { await until(() => __shosa.mode === 'result', null, 30000); } catch (e) { await shot('09-stuck'); console.log('stuck', await ev(() => [__shosa.step, __shosa.mode, document.getElementById('objective').textContent, document.getElementById('gauge').hidden, document.getElementById('choices').textContent])); throw e; } await W(1000); await shot('09-result');
 
 const res = await ev(() => ({ result: __shosa.result, tech: __shosa.story.tech, care: __shosa.story.care, mood: __shosa.story.mood, fps: Math.round(__shosa.fps) }));
 console.log(JSON.stringify(res, null, 1));

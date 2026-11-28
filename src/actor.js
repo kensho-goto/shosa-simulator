@@ -575,5 +575,6 @@ export class Actor {
       set('AK_03_BrowInnerUp', F.worry * 0.7);
       set('AK_30_MouthFrownLeft', F.worry * 0.35); set('AK_31_MouthFrownRight', F.worry * 0.35);
     }
+    if (this.cartoon) this.cartoon.update(this, bl, F, lookDown);
   }
 }
