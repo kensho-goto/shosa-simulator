@@ -30,6 +30,7 @@ export function pbr(name, { rep = [1, 1], tint, rot = 0, rough = 1, normal = 1, 
   });
   m.normalScale.set(normal, normal);
   if (tint) m.color.set(tint);
+  m.userData.pbr = name;
   return m;
 }
 function canvasTex(w, h, draw, srgb = true) {

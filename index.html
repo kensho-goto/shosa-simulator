@@ -9,6 +9,8 @@
 <meta name="robots" content="noindex">
 <title>所作シミュレーター（仮題）</title>
 <link rel="icon" href="data:,">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Dela+Gothic+One&family=M+PLUS+Rounded+1c:wght@700;800&display=swap">
 <link rel="stylesheet" href="src/style.css">
 <script type="importmap">
 { "imports": {
@@ -59,7 +61,7 @@
 <section id="title" class="screen">
   <div class="logo">
     <small>仮題</small>
-    <h1>所作<br>シミュレーター</h1>
+    <h1><span class="w l1"><span class="o">所作</span><span class="f">所作</span></span><br><span class="w l2"><span class="o">シミュレーター</span><span class="f">シミュレーター</span></span></h1>
     <p class="tag">礼儀正しくするほど、大事件になる。</p>
   </div>
   <nav>
@@ -92,6 +94,7 @@
   <label>マウスの感度 <input type="range" min="0.4" max="2" step="0.1" data-set="sens"></label>
   <label>操作 <select data-set="controls"><option value="easy">かんたん（押すだけ）</option><option value="pro">こだわり（マウス・キーを使い分ける）</option></select></label>
   <label>操作の手助け <select data-set="assist"><option value="0">なし</option><option value="1">あり（向きが合いやすい・こぼれにくい）</option></select></label>
+  <label>見た目 <select data-set="style"><option value="toon">アニメ風</option><option value="real">写実</option></select></label>
   <label>画質 <select data-set="quality"><option value="high">きれい</option><option value="low">かるい</option></select></label>
   <label>音の大きさ <input type="range" min="0" max="1" step="0.05" data-set="vol"></label>
   <button class="back" data-act="back">もどる</button>

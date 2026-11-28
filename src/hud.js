@@ -34,7 +34,9 @@ export class Hud {
   // 判定の大きな字（見事・よし・あっ）
   stamp(text, kind = 'good') {
     const s = this.stampEl || (this.stampEl = $('stamp'));
-    s.className = ''; void s.offsetWidth; s.textContent = text; s.className = 'show ' + kind;
+    s.className = ''; void s.offsetWidth;
+    const t = String(text).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]);
+    s.innerHTML = `<span class="o">${t}</span><span class="f">${t}</span>`; s.className = 'show ' + kind;
     s.style.fontSize = text.length > 4 ? `clamp(30px, ${Math.min(9, 64 / text.length).toFixed(1)}vw, ${Math.round(Math.min(110, 760 / text.length))}px)` : '';
     clearTimeout(this._st); this._st = setTimeout(() => { s.className = ''; }, 1100);
   }

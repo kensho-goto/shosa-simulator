@@ -1,6 +1,7 @@
 // 本体：読み込み → タイトル → 場面を進める → 結果。やり直し・保存・設定。
 import * as THREE from 'three';
 import { createRenderer, loadEnvironment, CameraRig } from './render.js';
+import { toonify, CartoonHead, LOOKS, outlineRenderer } from './toon.js';
 import { buildHouse, GENKAN } from './env.js';
 import { loadModels, Actor } from './actor.js';
 import { Prop, floorHeight, makeShoe, makeGift, makeBag, makeCup, makeSaucer, makeCloth, makeStain } from './props.js';
@@ -49,12 +50,36 @@ async function boot() {
   props.pshoeL.obj.scale.setScalar(0.86); props.pshoeR.obj.scale.setScalar(0.86);
   mk('gift', makeGift()); mk('bag', makeBag()); mk('cloth', makeCloth());
   for (const k of ['player', 'partner', 'father', 'mother']) { mk('saucer_' + k, makeSaucer()); mk('cup_' + k, makeCup(k === 'father' ? '#5a4a3a' : '#4f6b5a')); props['cup_' + k].level = 0.8; }
+  if (data.settings.style !== 'real') applyToon();
   applySettings();
   $('loading').classList.add('hide');
   setupMenus();
   showTitle();
   requestAnimationFrame(loop);
 }
+// アニメ風：段のある陰影・ふち線・大きな目・明るい光（見本：明るい昼の色、はっきりした表情）
+let toonCache = null;
+function applyToon() {
+  const r = R.renderer;
+  r.toneMapping = THREE.NeutralToneMapping; r.toneMappingExposure = 1.12;
+  // アニメ風の材質は、部屋の面光源や環境光を使わないので、空と床の光・日の光を足す
+  const hemi = new THREE.HemisphereLight('#ffffff', '#e8dcc8', 2.0); R.scene.add(hemi);
+  R.scene.traverse(o => { if (o.isPointLight) o.intensity *= 0.35; });
+  const sun = new THREE.DirectionalLight('#fffaf0', 1.9); sun.position.set(-2.5, 4.5, 1.2); sun.target.position.set(0, 0.4, 2.6);
+  sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048); sun.shadow.bias = -0.0004; sun.shadow.normalBias = 0.02;
+  Object.assign(sun.shadow.camera, { left: -3, right: 3, top: 4, bottom: -3, near: 0.5, far: 12 }); sun.shadow.radius = 2;
+  R.scene.add(sun, sun.target);
+  for (const [k, a] of Object.entries(actors)) a.cartoon = new CartoonHead(a, LOOKS[k]);
+  toonCache = toonify(R.scene);
+  for (const p of Object.values(props)) if (p.mats) p.mats = p.mats.map(m => toonCache.get(m) || m);
+  const fx = outlineRenderer(r);
+  R.ao.enabled = false;
+  R.render = () => fx.render(R.scene, R.camera);
+  R.toon = true;
+  document.body.classList.add('toon');
+}
+// あとから作られる物（こぼれたしみなど）もアニメ風に
+export function toonLater(obj) { if (R.toon) toonify(obj, toonCache); }
 function floorAt(x, z) {
   if (Math.abs(x) < 0.75 && z > 3.31 && z < 4.21) return 0.33;
   return floorHeight(x, z);
@@ -82,6 +107,7 @@ function loop(now) {
 let tt = 0;
 function titleCam(dt) {
   tt += dt;
+  if (R.toon) { rig.goalPos.set(1.5, 1.08 + Math.sin(tt * 0.1) * 0.02, 3.9 + Math.sin(tt * 0.08) * 0.08); rig.goalLook.set(-0.39, 0.82, 3.25); rig.speed = 0.6; return; }
   rig.goalPos.set(1.42 + Math.sin(tt * 0.08) * 0.12, 1.12, 2.12); rig.goalLook.set(-0.35, 0.62, 4.1); rig.speed = 0.6;
 }
 
@@ -167,7 +193,7 @@ async function playFrom(index) {
     const token = { alive: true }; curToken = token;
     const ctx = makeCtx(token, st.id); window.__shosa.ctx = ctx;
     hud.chapter(`${SCENE.chapter}　${SCENE.title}`, st.title);
-    hud.objective(''); hud.keys([]); hud.choices(null); hud.meter(false); hud.gauge(false); hud.clearSay();
+    hud.objective(''); hud.keys([]); hud.choices(null); hud.meter(false); hud.gauge(false); hud.clearSay(); for (const A of Object.values(actors)) { A.s.worry = 0; A.s.smile = 0; }
     try {
       STEPS[st.id].setup(ctx);
       await STEPS[st.id].run(ctx);
@@ -220,7 +246,13 @@ function showTitle() {
   if (actors) {
     STEPS.A6.setup(makeCtx({ alive: false }, 'title'));
     for (const k of ['cup_player']) props[k].obj.visible = true;
-    rig.shot([1.42, 1.12, 2.12], [-0.35, 0.62, 4.1], { cut: true });
+    if (R.toon) {
+      // アニメ風：緊張する主人公と、にこにこの相手を、親の側から見る（題字は左、二人は右）
+      rig.shot([1.5, 1.08, 3.9], [-0.39, 0.82, 3.25], { fov: 44, cut: true });
+      actors.player.s.worry = 0.9; actors.partner.s.smile = 0.7;
+      // 二人をこちら（カメラ）へ向ける。目線もこちら
+      for (const k of ['player', 'partner']) { const A = actors[k]; A.yaw = Math.atan2(1.5 - A.pos.x, 3.9 - A.pos.z) * 0.75; A.lookAt(rig.cam.position); }
+    } else rig.shot([1.42, 1.12, 2.12], [-0.35, 0.62, 4.1], { cut: true });
   }
 }
 function setupMenus() {
@@ -240,7 +272,7 @@ function setupMenus() {
   });
   for (const el of document.querySelectorAll('[data-set]')) {
     const k = el.dataset.set; el.value = data.settings[k];
-    el.addEventListener('input', () => { data.settings[k] = el.type === 'range' ? +el.value : el.value; if (k === 'quality') data.settings.qualityChosen = true; SAVE.save(data); applySettings(); });
+    el.addEventListener('input', () => { data.settings[k] = el.type === 'range' ? +el.value : el.value; if (k === 'quality') data.settings.qualityChosen = true; SAVE.save(data); if (k === 'style') { location.reload(); return; } applySettings(); });
   }
 }
 // スマホ：全画面と横向き（できる機種だけ）
